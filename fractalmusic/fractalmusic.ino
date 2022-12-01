@@ -153,7 +153,8 @@ void compute_music() {
   }  
   //constrain the piano key range to one the arduino can play and also not too high since unpleasant
   int piano_key = map(scale_x, 0, 100, 25, 74);
-  int scale_y = int(abs(y) * 1000 + 400);
+  //y has a range up to 3.5 or so
+  int scale_y = int(abs(y) * 600 + 400);
   
   music[0] = get_freq(piano_key);
   music[1] = scale_y;
