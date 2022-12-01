@@ -13,6 +13,7 @@ const int SPEAKERPIN = 9;
 const int MODPIN = 0;
 const int FREQ = 500;
 const int LOOPDELAY = 15;
+const int DURATION = 10;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const int MAXMOD = 10;
 
 int count = 0;
@@ -27,7 +28,9 @@ float y = 0;
 float next_x = 0;
 float next_y = 0;
 int note_duration = 0;
-bool latched = false;
+int freq = 0;
+//numbers of times a given note is played. cycles * duration >= note_duration
+int cycles = 0;
 
 //arrays for holding IFS matrix
 float a[4];
@@ -80,16 +83,25 @@ void loop() {
   // put your main code here, to run repeatedly:
   int sensor = analogRead(MODPIN);
  // int freq = map(sensor, 0, 1023, 100, 3000);  //100 hz is all little 8ohm speaker can get down to??
-
-  if (!latched) {
+ 
+  if (cycles * DURATION >= note_duration) {
+    //note has played for at least the amount of milliseconds specified so unlatch it
+    Serial.print("played for ms = ");
+    Serial.println(cycles * DURATION);
+    //reset cycle counter
+    cycles = 0;
+    //get new pitch and duration
     compute_music();
-    //need to latch in the note to play for the whole duration.
-    int freq = music[0];
+    freq = music[0];
+    note_duration = music[1];
+    Serial.println("new note");
+  }  
+  else {
+    //use previous pitch and duration, but the duration has to "count down"
+    freq = music[0];
     note_duration = music[1];
   }
 
-  //Serial.print("freq = ");
-  //Serial.println(freq);
   //int mod = map(sensor, 0, 1023, -4, 4);  //+- 2 hz
   int modRange = map(sensor, 0, 1023, 5, 30);   
   //what should max value be? Need to tie better to freq - make a tunable parameter
@@ -102,21 +114,15 @@ void loop() {
     deltaFreq += inc;
     if (deltaFreq >= MAXMOD) {
       inc = -inc;
-      //deltaFreq = -MAXMOD;
-      //Serial.println("max deltaFreq");
     }
     if (deltaFreq <= -MAXMOD) {
       inc = -inc;
-      //deltaFreq = -MAXMOD;
-      //Serial.println("min deltaFreq");
     }
   }
 
-  int duration = 10;  //you can hear down to 11ms or so
-  tone(SPEAKERPIN, freq+ deltaFreq, duration);
-
+  tone(SPEAKERPIN, freq + deltaFreq, DURATION);
   // long timeDelay = map(sensor, 0, 1023, 10, 20);
-
+  cycles += 1;
   delay(LOOPDELAY);
 }
 
@@ -139,7 +145,7 @@ void compute_music() {
 
   //keep values in bounds that make sense for pitch frequency and duration in milliseconds
   int scale_x = int(abs(x) * 1500 + 100);
-  int scale_y = int(abs(y) * 500 + 20);
+  int scale_y = int(abs(y) * 500 + random(200, 1300));
 
     
   if (scale_x < 4000 && scale_y < 2000) {
