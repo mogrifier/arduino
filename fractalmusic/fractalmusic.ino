@@ -15,10 +15,12 @@ const int FREQ = 500;
 const int LOOPDELAY = 15;
 const int DURATION = 10;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const int MAXMOD = 10;
+const float TWELFTHROOT = 1.05946;
+const float LOWA = 27.5;
 
 int count = 0;
 int deltaFreq = -5;
-int inc = 2;
+int inc = 3;
 
 //array for pitch and duration (first value is pitch)
 int music[2];
@@ -86,15 +88,15 @@ void loop() {
  
   if (cycles * DURATION >= note_duration) {
     //note has played for at least the amount of milliseconds specified so unlatch it
-    Serial.print("played for ms = ");
-    Serial.println(cycles * DURATION);
+    //Serial.print("played for ms = ");
+    //Serial.println(cycles * DURATION);
     //reset cycle counter
     cycles = 0;
     //get new pitch and duration
     compute_music();
     freq = music[0];
     note_duration = music[1];
-    Serial.println("new note");
+    //Serial.println("new note");
   }  
   else {
     //use previous pitch and duration, but the duration has to "count down"
@@ -128,8 +130,7 @@ void loop() {
 
 
 /*
-Get the next pitch and duration from the IFS code. Very little data is needed to be stored
-since not creating an image.
+Get the next pitch and duration from the IFS code. Just compute all as needed.
 */
 void compute_music() {
 
@@ -143,13 +144,29 @@ void compute_music() {
 
   //the next note to play is next_x with a duration of next_y
 
-  //keep values in bounds that make sense for pitch frequency and duration in milliseconds
-  int scale_x = int(abs(x) * 1500 + 100);
-  int scale_y = int(abs(y) * 500 + random(200, 1300));
+  //scale values so in bounds and make sense for pitch frequency and duration in milliseconds
+
+/*
+Map the pitch to a value from 1 to 88 and compute the note freq from that. 
+I believe x is always 0 <= x <= 1.
+
+round(key / 12) = octave
+key % 12 = note in octave
+
+octave * 27.5 * 12 root of 2 ^ note
+
+*/  
+  int scale_x = int(abs(x) *  4100 + 100);
+  Serial.print("scale_x =");
+  Serial.println(scale_x);
+  int piano_key = map(scale_x, 100, 4200, 25, 88);
+  Serial.print("key =");
+  Serial.println(piano_key);
+  int scale_y = int(abs(y) * 500 + random(200, 2000));
 
     
-  if (scale_x < 4000 && scale_y < 2000) {
-      music[0] = scale_x;
+  if (scale_x < 4200 && scale_y < 2000) {
+      music[0] = get_freq(piano_key);
       music[1] = scale_y;
   }
   else {
@@ -183,4 +200,14 @@ int get_chance() {
         return 2;
     else
         return 3;
+}
+
+/*
+Convert the piano key position (1 to 88) to the frequency
+*/
+int get_freq(int key) {
+  int octave = (int)(key/12);
+  int note = (key % 12) - 1;
+  float freq = LOWA * pow(2, octave) * pow(TWELFTHROOT, note);
+  return int(freq);
 }
