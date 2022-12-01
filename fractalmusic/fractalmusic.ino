@@ -145,26 +145,10 @@ void compute_music() {
   //the next note to play is next_x with a duration of next_y
 
   //scale values so in bounds and make sense for pitch frequency and duration in milliseconds
-
-/*
-Map the pitch to a value from 1 to 88 and compute the note freq from that. 
-I believe x is always 0 <= x <= 1.
-
-round(key / 12) = octave
-key % 12 = note in octave
-
-octave * 27.5 * 12 root of 2 ^ note
-
-*/  
   int scale_x = int(abs(x) *  4100 + 100);
-  Serial.print("scale_x =");
-  Serial.println(scale_x);
   int piano_key = map(scale_x, 100, 4200, 25, 88);
-  Serial.print("key =");
-  Serial.println(piano_key);
-  int scale_y = int(abs(y) * 500 + random(200, 2000));
+  int scale_y = int(abs(y) * 500 + random(200, 3000));
 
-    
   if (scale_x < 4200 && scale_y < 2000) {
       music[0] = get_freq(piano_key);
       music[1] = scale_y;
@@ -191,7 +175,6 @@ Choose array indices based on a hard-coded probability distribution.
 */
 int get_chance() {
     float r = (float)random(1, 100)/100;
-    
     if (r <= 0.1)
         return 0;
     if (r <= 0.2)
@@ -203,7 +186,7 @@ int get_chance() {
 }
 
 /*
-Convert the piano key position (1 to 88) to the frequency
+Convert the piano key position (1 to 88) to the corresponding frequency
 */
 int get_freq(int key) {
   int octave = (int)(key/12);
