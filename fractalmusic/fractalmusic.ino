@@ -13,7 +13,7 @@ const int SPEAKERPIN = 9;
 const int MODPIN = 0;
 const int FREQ = 500;
 const int LOOPDELAY = 15;
-const int DURATION = 10;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
+const int DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const int MAXMOD = 10;
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
@@ -69,7 +69,7 @@ void setup() {
   d[0] = 0.16;
   d[1] = 0.85;
   d[2] = 0.22;
-  d[3] = 0.24;
+  d[3] = 0.44;
 
   e[0] = 0;
   e[1] = 0;
