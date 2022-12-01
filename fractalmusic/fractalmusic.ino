@@ -21,6 +21,7 @@ const float LOWA = 27.5;
 int count = 0;
 int deltaFreq = -5;
 int inc = 3;
+int totalIterations = 0;
 
 //array for pitch and duration (first value is pitch)
 int music[2];
@@ -46,7 +47,10 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(57600);
 
-//initial IFS matrix data for a fern
+  //random start points
+  init_xy();
+
+  //initial IFS matrix data for a fern
   a[0] = 0;
   a[1] = 0.85;
   a[2] = 0.2;
@@ -87,21 +91,21 @@ void loop() {
  // int freq = map(sensor, 0, 1023, 100, 3000);  //100 hz is all little 8ohm speaker can get down to??
  
   if (cycles * DURATION >= note_duration) {
-    //note has played for at least the amount of milliseconds specified so unlatch it
-    //Serial.print("played for ms = ");
-    //Serial.println(cycles * DURATION);
+    //note has played for at least the amount of milliseconds specified so get a new note
     //reset cycle counter
     cycles = 0;
-    //get new pitch and duration
     compute_music();
     freq = music[0];
     note_duration = music[1];
-    //Serial.println("new note");
+    char buffer[40];
+    sprintf(buffer, "Pitch %d and duration %d", freq, note_duration);    
+    Serial.println(buffer);    
   }  
   else {
     //use previous pitch and duration, but the duration has to "count down"
     freq = music[0];
     note_duration = music[1];
+    cycles += 1;
   }
 
   //int mod = map(sensor, 0, 1023, -4, 4);  //+- 2 hz
@@ -124,7 +128,6 @@ void loop() {
 
   tone(SPEAKERPIN, freq + deltaFreq, DURATION);
   // long timeDelay = map(sensor, 0, 1023, 10, 20);
-  cycles += 1;
   delay(LOOPDELAY);
 }
 
@@ -134,38 +137,31 @@ Get the next pitch and duration from the IFS code. Just compute all as needed.
 */
 void compute_music() {
 
+  totalIterations += 1;
   int k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
   next_y = c[k] * x + d[k] * y + f[k];
   x = next_x;
   y = next_y;
-  //Serial.println(x);
-  //Serial.println(y);
 
   //the next note to play is next_x with a duration of next_y
 
   //scale values so in bounds and make sense for pitch frequency and duration in milliseconds
-  int scale_x = int(abs(x) *  4100 + 100);
-  int piano_key = map(scale_x, 100, 4200, 25, 88);
-  int scale_y = int(abs(y) * 500 + random(200, 3000));
-
-  if (scale_x < 4200 && scale_y < 2000) {
-      music[0] = get_freq(piano_key);
-      music[1] = scale_y;
-  }
-  else {
+  int scale_x = int(abs(x) * 100);
+  if (scale_x > 100) {
+    scale_x = 100;    
+  }  
+  //constrain the piano key range to one the arduino can play and also not too high since unpleasant
+  int piano_key = map(scale_x, 0, 100, 25, 64);
+  int scale_y = int(abs(y) * 1000 + 400);
+  
+  music[0] = get_freq(piano_key);
+  music[1] = scale_y;
+  
+  if (totalIterations > 100) {
     //reset to new starting point for iteration
-    x = 0;
-    y = 0;
-    //recompute
-    next_x = a[k] * x + b[k] * y + e[k];
-    next_y = c[k] * x + d[k] * y + f[k];
-    x = next_x;
-    y = next_y;
-
-    //since starting over should be in bounds
-    music[0] = scale_x;
-    music[1] = scale_y;
+    init_xy();
+    totalIterations = 0;
   }
 
 }
@@ -185,6 +181,10 @@ int get_chance() {
         return 3;
 }
 
+void init_xy() {
+  x = (float)random(1, 100)/100;
+  y = (float)random(1, 100)/100;
+}
 /*
 Convert the piano key position (1 to 88) to the corresponding frequency
 */
