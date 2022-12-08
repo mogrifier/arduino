@@ -8,10 +8,14 @@ This is a continuous player- run through FX for sure!
 duration should be less than loopdelay
 
 */
-//#define DEBUG true
+#define DEBUG true   //uncomment line to turn on some debug statements
 
+//digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
+const int VIBRATOPIN = 2;
+//analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int MODPIN = 0;
+
 const int FREQ = 500;
 const int LOOPDELAY = 15;
 const int DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
@@ -21,6 +25,15 @@ const float LOWA = 27.5;
 //these are not constant since will likely be changeable with a sensor input
 int INC_SENSOR = 3;
 int MAXMOD_SENSOR = 10;
+
+/*
+flag variable and flag names for state of synthesizer switches. I am using momentary switches that simply
+toggle between states. This means the software must track each button press and update the state.
+*/
+volatile int synthState = 0; //all 16 flags clear
+const int VIBRATO_FLAG = 0; //1st bit in the synth_state flag is for type of vibrato; default is SINE_VIBRATO
+const int SINE_VIBRATO = 0;
+const int SQUARE_VIBRATO = 1;
 
 //arrays for holding IFS matrix
 float a[4];
@@ -33,6 +46,9 @@ float f[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(57600);
+
+  //vibrato pin; I am using the internal pullup resistor to simplify the circuit
+  pinMode(VIBRATOPIN, INPUT_PULLUP);  
 
   //initial IFS matrix data for a fern
   a[0] = 0;
@@ -71,11 +87,19 @@ void loop() {
   //some variable values need to be saved between calls to loop so declare them as static
   static int cycles;     //for calculating how long a note has played
   static int count;      //
-  static int deltaFreq;  //vibrato
+  static int sineFreq;  //sine vibrato
+  static int deltaFreq; //total vibrato to apply
   static int duration;   //how long the note will play (minimum)
   static int freq;
+  static int square_vibrato_sign = 1;
+  int squareFreq; //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
   int sensor = analogRead(MODPIN);
+
+  /*update flags by looking for button presses. I am using toggle switches. Debounce not an issue.
+  How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
+  */  
+  updateSynthState();
 
   if (cycles * DURATION >= duration) {
     //note has played for at least the amount of milliseconds specified so get a new note
@@ -101,18 +125,28 @@ void loop() {
   //Serial.print("modrange= ");
   //Serial.println(modRange);
 
-  //programmable vibrato-like control. This creates a sinusoidal vibrato.
-  count++;
+  //programmable vibrato-like control. 
+  count++;  
   if (count % modRange == 0) {
     //reset count (if you don't it would overflow after many hours)
     count = 0;
-    deltaFreq += INC_SENSOR;
-    if (deltaFreq >= MAXMOD_SENSOR) {
-      INC_SENSOR = -INC_SENSOR;
+    if (bitRead(synthState, VIBRATO_FLAG) == SINE_VIBRATO) {
+      //This creates a sinusoidal vibrato.    
+      sineFreq += INC_SENSOR;
+      if (sineFreq >= MAXMOD_SENSOR) {
+        INC_SENSOR = -INC_SENSOR;
+      }
+      if (sineFreq <= -MAXMOD_SENSOR) {
+        INC_SENSOR = -INC_SENSOR;
+      }
+      deltaFreq = sineFreq;
     }
-    if (deltaFreq <= -MAXMOD_SENSOR) {
-      INC_SENSOR = -INC_SENSOR;
-    }
+    else {
+      //flip the square wave vibrato sign
+      square_vibrato_sign = -square_vibrato_sign;
+      //this creates a square vibrato. deltaFreq oscillates between a positive and a negative value
+      deltaFreq = square_vibrato_sign * (modRange + INC_SENSOR);
+    }    
   }
 
   tone(SPEAKERPIN, freq + deltaFreq, DURATION);
@@ -192,3 +226,24 @@ int get_freq(int key) {
   //round to nearest whole value
   return int(freq + 0.5);
 }
+
+/*
+Get toggle button state and update the flag variable. This uses polling and is called in main loop.
+*/
+void updateSynthState() {
+  //each flag is 1 or 0
+  int val = digitalRead(VIBRATOPIN);
+
+  #ifdef DEBUG {
+    if (val != bitRead(synthState, VIBRATO_FLAG)) {
+      //value changed
+      Serial.println(synthState);    
+    }
+  }
+  #endif  
+  
+  bitSet(synthState, VIBRATO_FLAG) = val;
+}
+
+
+
