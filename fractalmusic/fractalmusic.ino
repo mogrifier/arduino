@@ -25,13 +25,12 @@ const int LOOPDELAY = 15;
 const int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
-const int MAX_ITERATIONS =120;
+const int MAX_ITERATIONS = 120;
 
 //these are not constant since will likely be changeable with a sensor input
 int INC_SENSOR = 3;
 int MAXMOD_SENSOR = 10;
-int VARIABLE_ITERATIONS = 100;
-int MAX_DURATION = 1000; //milliseconds
+int VAR_ITERATIONS = 100;
 
 /*
 flag names for state of synthesizer switches. I am using toggle switches. The switch state is
@@ -101,6 +100,9 @@ void setup() {
   f[1] = 1.6;
   f[2] = 1.6;
   f[3] = 0.44;
+
+  //initialize initial state to match toggle switch positions
+  updateSynthState();
 }
 
 void loop() {
@@ -187,7 +189,7 @@ void compute_music(int &freq, int &duration) {
 
   //read sensor
   int iterSensor = analogRead(ITERATIONPIN);  
-  VARIABLE_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
+  VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
   totalIterations += 1;
   byte k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
@@ -213,7 +215,8 @@ void compute_music(int &freq, int &duration) {
   300msec = 200bpm, 2000msec = 30bpm
   Apply sensor to scale duration
   */
-  int durationScale= map(analogRead(DURATIONPIN), 0, 1023, 1, 6);
+  int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 1, 6);
+  //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
   int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;   //int(abs(y) * 600 + 400);
 
   //assign values to the variable references so changes are seen in the loop function
@@ -222,10 +225,10 @@ void compute_music(int &freq, int &duration) {
 
   #if defined(DEBUG) 
       char buffer[20];
-      sprintf(buffer, "Variable iterations limit = %d ", VARIABLE_ITERATIONS);
+      sprintf(buffer, "Variable iterations limit = %d ", VAR_ITERATIONS);
       Serial.println(buffer);
   #endif
-  if (totalIterations >= VARIABLE_ITERATIONS) {
+  if (totalIterations >= VAR_ITERATIONS) {
     //reset to new starting point for iteration
     init_xy(x, y);
     totalIterations = 0;
@@ -239,19 +242,11 @@ byte get_chance() {
   static byte index = 0;
   float r;
   if (RANDOM_FLAG == RANDOM_ON) {
-    r = (float)random(1, 100) / 100;
-    if (r <= 0.1)
-      return 0;
-    if (r <= 0.2)
-      return 1;
-    if (r <= 0.4)
-      return 2;
-    else
-      return 3;
+    return getIFSProbabilty();
   }
   else {
-    //random off- just return next value from kIndex or start over at 0
-    if (index == sizeof(kIndex)){
+    //random off- just return next value from kIndex (up to VAR_ITERATIONS) or start over at 0
+    if (index == VAR_ITERATIONS){
       index = 0;
     }
     //index will either be 0 or the next value. This logic keeps it in range.
@@ -310,17 +305,22 @@ void fill_kIndex() {
   float r;
   byte length = sizeof(kIndex);
   for (byte i = 0; i < length; i++) {
-    //FIXME repeating this random logic from get_chance() here is bad- should refactor
-    r = (float)random(1, 100) / 100;
-      if (r <= 0.1)
-        value = 0;
-      if (r <= 0.2)
-        value = 1;
-      if (r <= 0.4)
-        value = 2;
-      else
-        value = 3;
-    kIndex[i] = value;
+  //may seem a little odd but in this situation RANDOM_FLAG == RANDOM_ON 
+    kIndex[i] = getIFSProbabilty();
   }
 }
 
+/*
+This gets a k value (array index) based on probability rules that are part of the IFS.
+*/
+float getIFSProbabilty() {
+  float r = (float)random(1, 100) / 100;
+  if (r <= 0.1)
+    return 0;
+  if (r <= 0.2)
+    return 1;
+  if (r <= 0.4)
+    return 2;
+  else
+    return 3;
+}
