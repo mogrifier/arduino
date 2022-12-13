@@ -8,32 +8,41 @@ This is a continuous player- run through FX for sure!
 duration should be less than loopdelay
 
 */
-#define DEBUG true   //uncomment line to turn on some debug statements
+
+#define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
 const int VIBRATOPIN = 2;
+const int RANDOMPIN = 3;
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int MODPIN = 0;
+const int ITERATIONPIN = 1;
+const int DURATIONPIN = 2;
 
 const int FREQ = 500;
 const int LOOPDELAY = 15;
-const int DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
+const int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
 
 //these are not constant since will likely be changeable with a sensor input
 int INC_SENSOR = 3;
 int MAXMOD_SENSOR = 10;
+int MAX_ITERATIONS = 100;
+int MAX_DURATION = 1000; //milliseconds
 
 /*
-flag variable and flag names for state of synthesizer switches. I am using momentary switches that simply
-toggle between states. This means the software must track each button press and update the state.
+flag names for state of synthesizer switches. I am using toggle switches. The switch state is
+captured in the software. This means the software must track each button press and update the state.
 */
-volatile int synthState = 0; //all 16 flags clear
-const int VIBRATO_FLAG = 0; //1st bit in the synth_state flag is for type of vibrato; default is SINE_VIBRATO
+int VIBRATO_FLAG = 0;
+int RANDOM_FLAG = 0;
+//flag values
 const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
+const int RANDOM_OFF = 0;
+const int RANDOM_ON = 1;
 
 //arrays for holding IFS matrix
 float a[4];
@@ -46,9 +55,11 @@ float f[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(57600);
-
+  
   //vibrato pin; I am using the internal pullup resistor to simplify the circuit
   pinMode(VIBRATOPIN, INPUT_PULLUP);  
+  //random operation selector
+  pinMode(RANDOMPIN, INPUT_PULLUP);  
 
   //initial IFS matrix data for a fern
   a[0] = 0;
@@ -94,33 +105,32 @@ void loop() {
   static int square_vibrato_sign = 1;
   int squareFreq; //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
-  int sensor = analogRead(MODPIN);
-
+  
+  //int sensor = analogRead(MODPIN);
   /*update flags by looking for button presses. I am using toggle switches. Debounce not an issue.
   How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
   */  
   updateSynthState();
 
-  if (cycles * DURATION >= duration) {
+  if (cycles * BURST_DURATION >= duration) {
     //note has played for at least the amount of milliseconds specified so get a new note
     //reset cycle counter
     cycles = 0;
     //compute new freq and duration values
     compute_music(freq, duration);
 
-  #ifdef DEBUG {
+  #if defined(DEBUG) 
       char buffer[40];
       sprintf(buffer, "Pitch %d and duration %d", freq, duration);
       Serial.println(buffer);
-  }
   #endif
   }
   else {
     //use previous freq and duration- values is stored since variables are static, but the duration has to "count down"
     cycles += 1;
   }
-
-  int modRange = map(sensor, 0, 1023, 5, 30);  //effectively control range and speed of vibrato
+  
+  int modRange = map(analogRead(MODPIN), 0, 1023, 5, 30);  //effectively control range and speed of vibrato
   //what should max value be? Need to tie better to freq - make a tunable parameter
   //Serial.print("modrange= ");
   //Serial.println(modRange);
@@ -130,7 +140,7 @@ void loop() {
   if (count % modRange == 0) {
     //reset count (if you don't it would overflow after many hours)
     count = 0;
-    if (bitRead(synthState, VIBRATO_FLAG) == SINE_VIBRATO) {
+    if (VIBRATO_FLAG == SINE_VIBRATO) {
       //This creates a sinusoidal vibrato.    
       sineFreq += INC_SENSOR;
       if (sineFreq >= MAXMOD_SENSOR) {
@@ -149,8 +159,7 @@ void loop() {
     }    
   }
 
-  tone(SPEAKERPIN, freq + deltaFreq, DURATION);
-  // long timeDelay = map(sensor, 0, 1023, 10, 20);
+  tone(SPEAKERPIN, freq + deltaFreq, BURST_DURATION);
   delay(LOOPDELAY);
 }
 
@@ -166,6 +175,9 @@ void compute_music(int &freq, int &duration) {
   static float next_x;
   static float next_y;
 
+  //read sensor
+  int iterSensor = analogRead(ITERATIONPIN);  
+  MAX_ITERATIONS = map(iterSensor, 0, 1023, 3, 120);
   totalIterations += 1;
   int k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
@@ -173,6 +185,11 @@ void compute_music(int &freq, int &duration) {
   x = next_x;
   y = next_y;
 
+  #if defined (DEBUG)
+    Serial.print("raw x = ");
+    Serial.println(x);
+  #endif
+    
   //the next note to play is next_x with a duration of next_y
 
   //scale values so in bounds and make sense for pitch frequency and duration in milliseconds
@@ -182,14 +199,23 @@ void compute_music(int &freq, int &duration) {
   }
   //constrain the piano key range to one the arduino can play and also not too high since unpleasant
   int piano_key = map(scale_x, 0, 100, 25, 74);
-  //y has a range up to 3.5 or so
-  int scale_y = int(abs(y) * 600 + 400);
+  /*y has a range up to 10 or so. The map gives a set of discrete values in 125msec intervals.
+  300msec = 200bpm, 2000msec = 30bpm
+  Apply sensor to scale duration
+  */
+  int durationScale= map(analogRead(DURATIONPIN), 0, 1023, 1, 6);
+  int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;   //int(abs(y) * 600 + 400);
 
   //assign values to the variable references so changes are seen in the loop function
   freq = get_freq(piano_key);
   duration = scale_y;
 
-  if (totalIterations > 100) {
+  #if defined(DEBUG) 
+      char buffer[20];
+      sprintf(buffer, "Max iterations = %d ", MAX_ITERATIONS);
+      Serial.println(buffer);
+  #endif
+  if (totalIterations >= MAX_ITERATIONS) {
     //reset to new starting point for iteration
     init_xy(x, y);
     totalIterations = 0;
@@ -200,20 +226,38 @@ void compute_music(int &freq, int &duration) {
 Choose array indices based on a hard-coded probability distribution.
 */
 int get_chance() {
-  float r = (float)random(1, 100) / 100;
-  if (r <= 0.1)
-    return 0;
-  if (r <= 0.2)
-    return 1;
-  if (r <= 0.4)
+  float r;
+  if (RANDOM_FLAG == RANDOM_ON) {
+    r = (float)random(1, 100) / 100;
+    if (r <= 0.1)
+      return 0;
+    if (r <= 0.2)
+      return 1;
+    if (r <= 0.4)
+      return 2;
+    else
+      return 3;
+  }
+  else {
+    //random off- just return same K each time.
     return 2;
-  else
-    return 3;
+  }
 }
 
+/*
+Just initialize to 0,0 so you have a consistent start point and can almost get an arpeggio to play the same notes
+each time. I say almost because a random probability (through get_chance) is still used.
+*/
 void init_xy(float &x, float &y) {
-  x = (float)random(1, 100) / 100;
-  y = (float)random(1, 100) / 100;
+  if (RANDOM_FLAG == RANDOM_ON) {
+    x = (float)random(1, 100) / 100;
+    y = (float)random(1, 100) / 100;
+  }
+  else {
+    //random off- stame start point for IFS
+    x = 0;
+    y = 0;
+  }
 }
 
 /*
@@ -232,17 +276,8 @@ Get toggle button state and update the flag variable. This uses polling and is c
 */
 void updateSynthState() {
   //each flag is 1 or 0
-  int val = digitalRead(VIBRATOPIN);
-
-  #ifdef DEBUG {
-    if (val != bitRead(synthState, VIBRATO_FLAG)) {
-      //value changed
-      Serial.println(synthState);    
-    }
-  }
-  #endif  
-  
-  bitSet(synthState, VIBRATO_FLAG) = val;
+  VIBRATO_FLAG = digitalRead(VIBRATOPIN);
+  RANDOM_FLAG = digitalRead(RANDOMPIN);
 }
 
 
