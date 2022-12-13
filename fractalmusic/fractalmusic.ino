@@ -61,11 +61,11 @@ float f[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(57600);
-  
+
   //vibrato pin; I am using the internal pullup resistor to simplify the circuit
-  pinMode(VIBRATOPIN, INPUT_PULLUP);  
+  pinMode(VIBRATOPIN, INPUT_PULLUP);
   //random operation selector
-  pinMode(RANDOMPIN, INPUT_PULLUP);  
+  pinMode(RANDOMPIN, INPUT_PULLUP);
 
   //initialize kIndex
   fill_kIndex();
@@ -110,18 +110,18 @@ void loop() {
   //some variable values need to be saved between calls to loop so declare them as static
   static int cycles;     //for calculating how long a note has played
   static int count;      //
-  static int sineFreq;  //sine vibrato
-  static int deltaFreq; //total vibrato to apply
+  static int sineFreq;   //sine vibrato
+  static int deltaFreq;  //total vibrato to apply
   static int duration;   //how long the note will play (minimum)
   static int freq;
   static int square_vibrato_sign = 1;
-  int squareFreq; //square vibrato- calculated, not saved
+  int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
-  
+
   //int sensor = analogRead(MODPIN);
   /*update flags by looking for button presses. I am using toggle switches. Debounce not an issue.
   How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
-  */  
+  */
   updateSynthState();
 
   if (cycles * BURST_DURATION >= duration) {
@@ -131,29 +131,28 @@ void loop() {
     //compute new freq and duration values
     compute_music(freq, duration);
 
-  #if defined(DEBUG) 
-      char buffer[40];
-      sprintf(buffer, "Pitch %d and duration %d", freq, duration);
-      Serial.println(buffer);
-  #endif
-  }
-  else {
+#if defined(DEBUG)
+    char buffer[40];
+    sprintf(buffer, "Pitch %d and duration %d", freq, duration);
+    Serial.println(buffer);
+#endif
+  } else {
     //use previous freq and duration- values is stored since variables are static, but the duration has to "count down"
     cycles += 1;
   }
-  
+
   int modRange = map(analogRead(MODPIN), 0, 1023, 5, 30);  //effectively control range and speed of vibrato
   //what should max value be? Need to tie better to freq - make a tunable parameter
   //Serial.print("modrange= ");
   //Serial.println(modRange);
 
-  //programmable vibrato-like control. 
-  count++;  
+  //programmable vibrato-like control.
+  count++;
   if (count % modRange == 0) {
     //reset count (if you don't it would overflow after many hours)
     count = 0;
     if (VIBRATO_FLAG == SINE_VIBRATO) {
-      //This creates a sinusoidal vibrato.    
+      //This creates a sinusoidal vibrato.
       sineFreq += INC_SENSOR;
       if (sineFreq >= MAXMOD_SENSOR) {
         INC_SENSOR = -INC_SENSOR;
@@ -162,13 +161,12 @@ void loop() {
         INC_SENSOR = -INC_SENSOR;
       }
       deltaFreq = sineFreq;
-    }
-    else {
+    } else {
       //flip the square wave vibrato sign
       square_vibrato_sign = -square_vibrato_sign;
       //this creates a square vibrato. deltaFreq oscillates between a positive and a negative value
       deltaFreq = square_vibrato_sign * (modRange + INC_SENSOR);
-    }    
+    }
   }
 
   tone(SPEAKERPIN, freq + deltaFreq, BURST_DURATION);
@@ -188,7 +186,7 @@ void compute_music(int &freq, int &duration) {
   static float next_y;
 
   //read sensor
-  int iterSensor = analogRead(ITERATIONPIN);  
+  int iterSensor = analogRead(ITERATIONPIN);
   VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
   totalIterations += 1;
   byte k = get_chance();
@@ -197,11 +195,11 @@ void compute_music(int &freq, int &duration) {
   x = next_x;
   y = next_y;
 
-  #if defined (DEBUG)
-    Serial.print("raw x = ");
-    Serial.println(x);
-  #endif
-    
+#if defined(DEBUG)
+  Serial.print("raw x = ");
+  Serial.println(x);
+#endif
+
   //the next note to play is next_x with a duration of next_y
 
   //scale values so in bounds and make sense for pitch frequency and duration in milliseconds
@@ -217,17 +215,17 @@ void compute_music(int &freq, int &duration) {
   */
   int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 1, 6);
   //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
-  int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;   //int(abs(y) * 600 + 400);
+  int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;  //int(abs(y) * 600 + 400);
 
   //assign values to the variable references so changes are seen in the loop function
   freq = get_freq(piano_key);
   duration = scale_y;
 
-  #if defined(DEBUG) 
-      char buffer[20];
-      sprintf(buffer, "Variable iterations limit = %d ", VAR_ITERATIONS);
-      Serial.println(buffer);
-  #endif
+#if defined(DEBUG)
+  char buffer[20];
+  sprintf(buffer, "Variable iterations limit = %d ", VAR_ITERATIONS);
+  Serial.println(buffer);
+#endif
   if (totalIterations >= VAR_ITERATIONS) {
     //reset to new starting point for iteration
     init_xy(x, y);
@@ -240,17 +238,15 @@ Choose array indices based on a hard-coded probability distribution.
 */
 byte get_chance() {
   static byte index = 0;
-  float r;
   if (RANDOM_FLAG == RANDOM_ON) {
     return getIFSProbabilty();
-  }
-  else {
+  } else {
     //random off- just return next value from kIndex (up to VAR_ITERATIONS) or start over at 0
-    if (index == VAR_ITERATIONS){
+    if (index == VAR_ITERATIONS) {
       index = 0;
     }
     //index will either be 0 or the next value. This logic keeps it in range.
-    return kIndex[index++];  
+    return kIndex[index++];
   }
 }
 
@@ -262,8 +258,7 @@ void init_xy(float &x, float &y) {
   if (RANDOM_FLAG == RANDOM_ON) {
     x = (float)random(1, 100) / 100;
     y = (float)random(1, 100) / 100;
-  }
-  else {
+  } else {
     //random off- same start point for IFS
     x = 0;
     y = 0;
@@ -292,20 +287,16 @@ void updateSynthState() {
   //if state goes from off to on, reset the kIndex array with new random values
   if (flag == RANDOM_OFF && RANDOM_FLAG == RANDOM_ON) {
     //state transitioned from off to on so refill with new values
-    #if defined(DEBUG)    
-      Serial.println("**********************random switched from off to on");
+    #if defined(DEBUG)
+        Serial.println("**********************random switched from off to on");
     #endif
-    fill_kIndex();    
+    fill_kIndex();
   }
 }
 
 void fill_kIndex() {
-  //fill with random values. This only affects pitch by design.
-  byte value;
-  float r;
-  byte length = sizeof(kIndex);
-  for (byte i = 0; i < length; i++) {
-  //may seem a little odd but in this situation RANDOM_FLAG == RANDOM_ON 
+  //fill with random values. This only affects pitch, by design.
+  for (byte i = 0; i < MAX_ITERATIONS; i++) {
     kIndex[i] = getIFSProbabilty();
   }
 }
