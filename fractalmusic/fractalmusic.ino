@@ -25,11 +25,12 @@ const int LOOPDELAY = 15;
 const int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
+const int MAX_ITERATIONS =120;
 
 //these are not constant since will likely be changeable with a sensor input
 int INC_SENSOR = 3;
 int MAXMOD_SENSOR = 10;
-int MAX_ITERATIONS = 100;
+int VARIABLE_ITERATIONS = 100;
 int MAX_DURATION = 1000; //milliseconds
 
 /*
@@ -43,6 +44,12 @@ const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
 const int RANDOM_OFF = 0;
 const int RANDOM_ON = 1;
+
+/*
+Need buffers to store data for playback of arpeggio patterns from either a saved random
+pattern or a set of notes played in via the keyboard. byte uses half memory of int and works fine.
+*/
+byte kIndex[MAX_ITERATIONS];
 
 //arrays for holding IFS matrix
 float a[4];
@@ -60,6 +67,9 @@ void setup() {
   pinMode(VIBRATOPIN, INPUT_PULLUP);  
   //random operation selector
   pinMode(RANDOMPIN, INPUT_PULLUP);  
+
+  //initialize kIndex
+  fill_kIndex();
 
   //initial IFS matrix data for a fern
   a[0] = 0;
@@ -177,9 +187,9 @@ void compute_music(int &freq, int &duration) {
 
   //read sensor
   int iterSensor = analogRead(ITERATIONPIN);  
-  MAX_ITERATIONS = map(iterSensor, 0, 1023, 3, 120);
+  VARIABLE_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
   totalIterations += 1;
-  int k = get_chance();
+  byte k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
   next_y = c[k] * x + d[k] * y + f[k];
   x = next_x;
@@ -212,10 +222,10 @@ void compute_music(int &freq, int &duration) {
 
   #if defined(DEBUG) 
       char buffer[20];
-      sprintf(buffer, "Max iterations = %d ", MAX_ITERATIONS);
+      sprintf(buffer, "Variable iterations limit = %d ", VARIABLE_ITERATIONS);
       Serial.println(buffer);
   #endif
-  if (totalIterations >= MAX_ITERATIONS) {
+  if (totalIterations >= VARIABLE_ITERATIONS) {
     //reset to new starting point for iteration
     init_xy(x, y);
     totalIterations = 0;
@@ -225,7 +235,8 @@ void compute_music(int &freq, int &duration) {
 /*
 Choose array indices based on a hard-coded probability distribution.
 */
-int get_chance() {
+byte get_chance() {
+  static byte index = 0;
   float r;
   if (RANDOM_FLAG == RANDOM_ON) {
     r = (float)random(1, 100) / 100;
@@ -239,8 +250,12 @@ int get_chance() {
       return 3;
   }
   else {
-    //random off- just return same K each time.
-    return 2;
+    //random off- just return next value from kIndex or start over at 0
+    if (index == sizeof(kIndex)){
+      index = 0;
+    }
+    //index will either be 0 or the next value. This logic keeps it in range.
+    return kIndex[index++];  
   }
 }
 
@@ -254,7 +269,7 @@ void init_xy(float &x, float &y) {
     y = (float)random(1, 100) / 100;
   }
   else {
-    //random off- stame start point for IFS
+    //random off- same start point for IFS
     x = 0;
     y = 0;
   }
@@ -277,8 +292,35 @@ Get toggle button state and update the flag variable. This uses polling and is c
 void updateSynthState() {
   //each flag is 1 or 0
   VIBRATO_FLAG = digitalRead(VIBRATOPIN);
+  byte flag = RANDOM_FLAG;
   RANDOM_FLAG = digitalRead(RANDOMPIN);
+  //if state goes from off to on, reset the kIndex array with new random values
+  if (flag == RANDOM_OFF && RANDOM_FLAG == RANDOM_ON) {
+    //state transitioned from off to on so refill with new values
+    #if defined(DEBUG)    
+      Serial.println("**********************random switched from off to on");
+    #endif
+    fill_kIndex();    
+  }
 }
 
-
+void fill_kIndex() {
+  //fill with random values. This only affects pitch by design.
+  byte value;
+  float r;
+  byte length = sizeof(kIndex);
+  for (byte i = 0; i < length; i++) {
+    //FIXME repeating this random logic from get_chance() here is bad- should refactor
+    r = (float)random(1, 100) / 100;
+      if (r <= 0.1)
+        value = 0;
+      if (r <= 0.2)
+        value = 1;
+      if (r <= 0.4)
+        value = 2;
+      else
+        value = 3;
+    kIndex[i] = value;
+  }
+}
 
