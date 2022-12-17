@@ -76,10 +76,6 @@ void setup() {
   //syn on-off pin
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
 
-//TEST
-SYNC_FLAG = ON;  
-  
-
   //initialize kIndex
   fill_kIndex();
 
