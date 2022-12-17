@@ -15,6 +15,8 @@ duration should be less than loopdelay
 const int SPEAKERPIN = 9;
 const int VIBRATOPIN = 2;
 const int RANDOMPIN = 3;
+const int SYNCONOFFPIN = 4;
+const int RECEIVESYNCPIN = 21;
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int MODPIN = 0;
 const int ITERATIONPIN = 1;
@@ -32,17 +34,21 @@ int INC_SENSOR = 3;
 int MAXMOD_SENSOR = 10;
 int VAR_ITERATIONS = 100;
 
+//other global variables- minimize use
+int arpeggiatorDuration = 500; //default to 120BPM
+
 /*
 flag names for state of synthesizer switches. I am using toggle switches. The switch state is
 captured in the software. This means the software must track each button press and update the state.
 */
 int VIBRATO_FLAG = 0;
 int RANDOM_FLAG = 0;
+int SYNC_FLAG = 0;
 //flag values
 const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
-const int RANDOM_OFF = 0;
-const int RANDOM_ON = 1;
+const int OFF = 0;
+const int ON = 1;
 
 /*
 Need buffers to store data for playback of arpeggio patterns from either a saved random
@@ -60,12 +66,15 @@ float f[4];
 
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(57600);
-
+  Serial.begin(115200);
   //vibrato pin; I am using the internal pullup resistor to simplify the circuit
   pinMode(VIBRATOPIN, INPUT_PULLUP);
   //random operation selector
   pinMode(RANDOMPIN, INPUT_PULLUP);
+  //5v trigger receive sync  
+  pinMode(RECEIVESYNCPIN, INPUT_PULLUP);
+  //syn on-off pin
+  pinMode(SYNCONOFFPIN, INPUT_PULLUP);
 
   //initialize kIndex
   fill_kIndex();
@@ -103,6 +112,8 @@ void setup() {
 
   //initialize initial state to match toggle switch positions
   updateSynthState();
+  //use hardware interrupt to receive trigger pulse
+  attachInterrupt(2, receiveTrigger, RISING);  //digital pin 21
 }
 
 void loop() {
@@ -130,7 +141,6 @@ void loop() {
     cycles = 0;
     //compute new freq and duration values
     compute_music(freq, duration);
-
 #if defined(DEBUG)
     char buffer[40];
     sprintf(buffer, "Pitch %d and duration %d", freq, duration);
@@ -139,6 +149,11 @@ void loop() {
   } else {
     //use previous freq and duration- values is stored since variables are static, but the duration has to "count down"
     cycles += 1;
+  }
+
+  if (SYNC_FLAG == ON) {
+    //use duration calculated from trigger pulses
+    duration = arpeggiatorDuration;
   }
 
   int modRange = map(analogRead(MODPIN), 0, 1023, 5, 30);  //effectively control range and speed of vibrato
@@ -238,7 +253,7 @@ Choose array indices based on a hard-coded probability distribution.
 */
 byte get_chance() {
   static byte index = 0;
-  if (RANDOM_FLAG == RANDOM_ON) {
+  if (RANDOM_FLAG == ON) {
     return getIFSProbabilty();
   } else {
     //random off- just return next value from kIndex (up to VAR_ITERATIONS) or start over at 0
@@ -255,7 +270,7 @@ Just initialize to 0,0 so you have a consistent start point and can almost get a
 each time. I say almost because a random probability (through get_chance) is still used.
 */
 void init_xy(float &x, float &y) {
-  if (RANDOM_FLAG == RANDOM_ON) {
+  if (RANDOM_FLAG == ON) {
     x = (float)random(1, 100) / 100;
     y = (float)random(1, 100) / 100;
   } else {
@@ -284,8 +299,11 @@ void updateSynthState() {
   VIBRATO_FLAG = digitalRead(VIBRATOPIN);
   byte flag = RANDOM_FLAG;
   RANDOM_FLAG = digitalRead(RANDOMPIN);
+  //sync
+  SYNC_FLAG = digitalRead(SYNCONOFFPIN);
+    
   //if state goes from off to on, reset the kIndex array with new random values
-  if (flag == RANDOM_OFF && RANDOM_FLAG == RANDOM_ON) {
+  if (flag == OFF && RANDOM_FLAG == ON) {
     //state transitioned from off to on so refill with new values
     #if defined(DEBUG)
         Serial.println("**********************random switched from off to on");
@@ -314,4 +332,20 @@ float getIFSProbabilty() {
     return 2;
   else
     return 3;
+}
+
+/*
+Receives a trigger pulse for playback syncronization. Pulse needs to be a 5v trigger
+like from a drum machine or other synth. Needs two pulses for determining note 
+duration for use in arpeggiator.
+*/
+void receiveTrigger() {
+  //need to calculate time between pulses (i.e, bpm) and turn into value for duration
+  static long oldPulse;
+  long newPulse;
+  //I see pulse accuracy of +-1 millisecond which is fine
+  newPulse = millis();
+  //80% of pulse interval
+  arpeggiatorDuration = int((newPulse - oldPulse) * 0.8);
+  oldPulse = newPulse;
 }
