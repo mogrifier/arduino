@@ -10,12 +10,13 @@ duration should be less than loopdelay
 */
 #include <Tone.h>
 Tone tone1;
-//Tone tone2;
+Tone tone2;
 
 #define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
+const int SPEAKER2PIN = 10;
 const int VIBRATOPIN = 2;
 const int RANDOMPIN = 3;
 const int SYNCONOFFPIN = 4;
@@ -27,7 +28,7 @@ const int DURATIONPIN = 2;
 
 const int FREQ = 500;
 const int LOOPDELAY = 15;
-const int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
+const int BURST_DURATION = 10;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
 const int MAX_ITERATIONS = 120;
@@ -81,6 +82,7 @@ void setup() {
 
   //
   tone1.begin(SPEAKERPIN);
+  tone2.begin(SPEAKER2PIN);
 
   //initialize kIndex
   fill_kIndex();
@@ -190,8 +192,14 @@ void loop() {
     }
   }
 
-  tone1.play(freq , BURST_DURATION);
+  int detune = (int)((freq * TWELFTHROOT)/100) * 35;
+  tone1.play(freq + deltaFreq , BURST_DURATION);
+  tone2.play(freq + detune, BURST_DURATION);
   delay(LOOPDELAY);
+
+tone1.stop();
+tone2.stop();
+  
 }
 
 
