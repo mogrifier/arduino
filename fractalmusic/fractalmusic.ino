@@ -8,6 +8,9 @@ This is a continuous player- run through FX for sure!
 duration should be less than loopdelay
 
 */
+#include <Tone.h>
+Tone tone1;
+//Tone tone2;
 
 #define DEBUG 0  //uncomment line to turn on some debug statements
 
@@ -75,6 +78,9 @@ void setup() {
   pinMode(RECEIVESYNCPIN, INPUT_PULLUP);
   //syn on-off pin
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
+
+  //
+  tone1.begin(SPEAKERPIN);
 
   //initialize kIndex
   fill_kIndex();
@@ -184,7 +190,7 @@ void loop() {
     }
   }
 
-  tone(SPEAKERPIN, freq + deltaFreq, BURST_DURATION);
+  tone1.play(freq , BURST_DURATION);
   delay(LOOPDELAY);
 }
 
