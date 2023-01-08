@@ -81,7 +81,7 @@ point of this is to play the adventure kid loop at a reasonable rate. The origin
 That means if you play it there, the pitch will be accurate. Let's see what a software counter can do.
 */
 void loop() {
-  static long timer = 0;
+  static int timer = 0;
   //let's print some values
   //Serial.println(getSinePDM(800));
 
@@ -93,10 +93,10 @@ timer++;
 
 
 //this is close for 8KHZ sampling rate but not good enough. need hardware timer precision
-  if (timer > 30)  {
+  if (timer > 3)  {
     //Serial.println(map(1, 0, 1023, 100, 4000));
     //pdm = getSinePDM(1500);   //(map(1, 0, 1023, 100, 4000));
-    digitalWrite(SPEAKERPIN, getSinePDM(1200));
+    digitalWrite(SPEAKERPIN, getSinePDM(2200));
     timer = 0;
   }
 
