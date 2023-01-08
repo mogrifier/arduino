@@ -22,58 +22,59 @@
 
 #include "incbin.h"
 
-// Include TEXT file "incbin-print-self.ino" with name `Sketch`
-//INCTXT(SketchText, "data.txt");
-// This will create global variables:
-//  const __FlashStringHelper gSketchTextData[];        // NULL-terminated Flash string, pointer to the data
-//  const __FlashStringHelper *const gSketchTextEnd;    // Pointer to the end of the data
-//  const unsigned int gSketchTextSize;                 // Size of the data in bytes
-
-
 // Alternatively you can include the file as BINARY data
 // --
-INCBIN(SketchText, "AKWF_0001.raw");
+INCBIN(AUDIO, "8bit-AMEN_LOO.wav");
 // --
 // This will create global variables:
 //  const unsigned char gSketchTextData[];              // Pointer to the data
 //  const unsigned char *const gSketchTextEnd;          // Pointer to the end of the data
-//  const unsigned int gSketchTextSize;                 // Size of the data in bytes
+//  const unsigned int gAUDIOSize;                 // Size of the data in bytes
 
 
 //AKWF sampling information
 const float sampleRate = 8000.0;
 const float period = (float)1 / sampleRate;
 //AKWF all use 600 samples. I am using bytes so 600 8-bit samples
-const int sampleCount = 600;
-
+const int OFFSET = 25000;
 const int SPEAKERPIN = 9;
+
+
+/*
+this can play arbitrary regions of memory by exceeding the size of the array with index used.
+Implication is a single file (like the mirage disks with 6 sets of samples) could be loaded in 
+and if the correct indices are know, jump into any chunk of memory and play it.
+However, so far all I get when playing is a siren sound. Not good enough. Can get static, too.
+
+Maybe I need the second order modulator? Or maybe I need to oversample. I think I may be hitting
+computational limits. Nothing has sound close to source material.
+Still, stepping through memory at higher rates may produce proper pitches. 
+
+Hardware time looks like a must. Software loop is still slow I think. At least I know digitalWrite is slow.
+*/
+
+
 
 void setup() {
   Serial.begin(115200);
   pinMode(SPEAKERPIN, OUTPUT);
 
-  // Print data content
-  /*
   Serial.println(F("----------------------------------"));
-  for (int i = 0; i < gSketchTextSize; i++) {
-    Serial.println(gSketchTextData[i]);
-  }
-  */
-
-  Serial.println(F("----------------------------------"));
-
   // Print data size
-  Serial.print(F("Sketch file size: "));
-  Serial.println(gSketchTextSize);
+  Serial.print(F("wavetable file size: "));
+  Serial.println(gAUDIOSize);
+
+/* Alternatively, read the data from ROM byte-by-byte */
+/*
+  PGM_P p = reinterpret_cast<PGM_P>(gAUDIOData);
+  for(int i = 0; i < gAUDIOSize; ++i) {
+    unsigned char c = pgm_read_byte(p++);
+   Serial.write(c);
+  }
+  Serial.println();
+*/
 
 
-  /* Alternatively, read the data byte-by-byte (for AVR-based Arduino) */
-  //  PGM_P p = reinterpret_cast<PGM_P>(gSketchTextData);
-  //  for(int i = 0; i < gSketchTextSize; ++i) {
-  //    unsigned char c = pgm_read_byte(p++);
-  //    Serial.write(c);
-  //  }
-  //  Serial.println();
 }
 
 /*
@@ -82,25 +83,21 @@ That means if you play it there, the pitch will be accurate. Let's see what a so
 */
 void loop() {
   static int timer = 0;
-  //let's print some values
-  //Serial.println(getSinePDM(800));
-
   //has a discontinuity in sine wave I can't explain but fine for now
-    
-//62.5 nanoseconds per count????? * 1000 
-timer++;
-//int pdm = 0;
+  //62.5 nanoseconds per count????? * 1000
+  /*
+  int pdm = 0;
+  //read anallog sensor input 1
+  int freqSensor = analogRead(1);
+  //this is close for 8KHZ sampling rate but not good enough. need hardware timer precision
+  pdm = getSinePDM(map(freqSensor, 0, 1023, 100, 4000));
+  digitalWrite(SPEAKERPIN, pdm);
+  */
 
-
-//this is close for 8KHZ sampling rate but not good enough. need hardware timer precision
-  if (timer > 3)  {
-    //Serial.println(map(1, 0, 1023, 100, 4000));
-    //pdm = getSinePDM(1500);   //(map(1, 0, 1023, 100, 4000));
-    digitalWrite(SPEAKERPIN, getSinePDM(2200));
-    timer = 0;
+  if (timer++ > 25) {
+  digitalWrite(SPEAKERPIN, getWavetablePDM());
+  timer = 0;
   }
-
-///no delay- software timer
 }
 
 
@@ -123,12 +120,13 @@ y = np.sin(omega*t_vec)
 int getSinePDM(float freq) {
   static float count = 0.0;
   static float error = 0.0;  //making it static keeps a running total as needed
-  static float omega = TWO_PI * freq;
+  float omega = TWO_PI * freq;
   int intermediate = -1;
   int output;
 
   //count up to two pi radians which is one full cycle
   float angle = omega * period * count;
+  //Serial.println(omega);
   float sine = sin(angle);
   //Serial.println(sine);
   error += sine;
@@ -170,4 +168,35 @@ function pdm(real[0..s] x, real qe = 0) // initial running error is zero
 */
 
 int getWavetablePDM() {
+  static int count = OFFSET;  //program offset to memory where audio file is stored- maybe
+  static float error;  //making it static keeps a running total as needed
+  int intermediate;
+  int output;
+
+  //need to normalize the audio sample range from unsigned bytes to [-1,1]
+  //Serial.println(((float)gAUDIOData[count] / 255.0) * 2.0 - 1.0);
+
+  byte sample = gAUDIOData[count];
+  error += ((float)sample / 255.0) * 2.0 - 1.0;
+  if (error > 0) {
+    intermediate = 1;
+  } else {
+    intermediate = -1;
+  }
+  error = error - intermediate;
+  //Serial.println(error);
+  count = count + 1;
+
+  if (count >= gAUDIOSize + OFFSET) {
+    count = OFFSET;
+  }
+  output = intermediate;
+  //only return 0 or 1
+  if (output == -1) {
+    output = 0;
+  }
+
+  //Serial.println(output);
+
+  return output;
 }
