@@ -202,7 +202,7 @@ void compute_music(int &freq, int &duration) {
 
   //read sensor
   int iterSensor = analogRead(ITERATIONPIN);
-  VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
+  VAR_ITERATIONS = map(iterSensor, 0, 1023, MAX_ITERATIONS, 3);
   totalIterations += 1;
   byte k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
