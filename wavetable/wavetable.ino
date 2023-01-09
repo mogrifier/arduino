@@ -21,10 +21,12 @@
  */
 
 #include "incbin.h"
+#include <avr/io.h>
+#include <avr/interrupt.h>
 
 // Alternatively you can include the file as BINARY data
 // --
-INCBIN(AUDIO, "8bit-AMEN_LOO.wav");
+INCBIN(AUDIO, "8bit-AMEN_LOO.WAV");
 // --
 // This will create global variables:
 //  const unsigned char gSketchTextData[];              // Pointer to the data
@@ -39,7 +41,6 @@ const float period = (float)1 / sampleRate;
 const int OFFSET = 25000;
 const int SPEAKERPIN = 9;
 
-
 /*
 this can play arbitrary regions of memory by exceeding the size of the array with index used.
 Implication is a single file (like the mirage disks with 6 sets of samples) could be loaded in 
@@ -53,19 +54,42 @@ Still, stepping through memory at higher rates may produce proper pitches.
 Hardware time looks like a must. Software loop is still slow I think. At least I know digitalWrite is slow.
 */
 
+/*
+Interrupt Service Routine will be called each time the timer reaches its compare value.
+*/
+unsigned int reload = 1999;
+byte bit;
 
+/*
+This is working BUT power level (volume) is super low since pulse durations are too fast.
+For simple stuff, go with 8KHz sampling rate. The tone I hear sounds really nice. Increase
+duty cycle and try again.
+*/
+ISR(TIMER1_COMPA_vect) {
+  bit = getWavetablePDM();  //getSinePDM(880);
+  if (bit == 1) {
+    PORTB = PORTB | B00000010;  //pin 9 HIGH
+    //Serial.println("hi");
+  } else {
+    PORTB = PORTB & B11111101;  //pin 9 LOW
+    //Serial.println("low");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
   pinMode(SPEAKERPIN, OUTPUT);
+  Serial.print("cpu clock = ");
+
+  Serial.println(F_CPU);
 
   Serial.println(F("----------------------------------"));
   // Print data size
   Serial.print(F("wavetable file size: "));
   Serial.println(gAUDIOSize);
 
-/* Alternatively, read the data from ROM byte-by-byte */
-/*
+  /* Alternatively, read the data from ROM byte-by-byte */
+  /*
   PGM_P p = reinterpret_cast<PGM_P>(gAUDIOData);
   for(int i = 0; i < gAUDIOSize; ++i) {
     unsigned char c = pgm_read_byte(p++);
@@ -74,7 +98,29 @@ void setup() {
   Serial.println();
 */
 
+  initTimer();
+}
 
+void initTimer() {
+  DDRB = B00000010;
+  // initialize timer
+
+  cli();
+  //TCCR1A = 0;
+  //TCCR1B = 0;
+  //OCR1A = reload;
+  //TCCR1B = (1 << WGM12) | (1); // << CS12);
+
+  TCCR1B = (TCCR1B & ~_BV(WGM13)) | _BV(WGM12);
+  TCCR1A = TCCR1A & ~(_BV(WGM11) | _BV(WGM10));
+
+  // No prescaler (p.134)
+  TCCR1B = (TCCR1B & ~(_BV(CS12) | _BV(CS11))) | _BV(CS10);
+
+  OCR1A = reload;
+  TIMSK1 |= _BV(OCIE1A);  //(1 << OCIE1A);
+  sei();
+  Serial.println("TIMER1 Setup Finished.");
 }
 
 /*
@@ -82,22 +128,15 @@ point of this is to play the adventure kid loop at a reasonable rate. The origin
 That means if you play it there, the pitch will be accurate. Let's see what a software counter can do.
 */
 void loop() {
-  static int timer = 0;
-  //has a discontinuity in sine wave I can't explain but fine for now
-  //62.5 nanoseconds per count????? * 1000
-  /*
-  int pdm = 0;
-  //read anallog sensor input 1
-  int freqSensor = analogRead(1);
-  //this is close for 8KHZ sampling rate but not good enough. need hardware timer precision
-  pdm = getSinePDM(map(freqSensor, 0, 1023, 100, 4000));
-  digitalWrite(SPEAKERPIN, pdm);
-  */
 
-  if (timer++ > 25) {
-  digitalWrite(SPEAKERPIN, getWavetablePDM());
-  timer = 0;
-  }
+  //toggle built-in LED
+  /*
+PORTB = PORTB | B00100000;
+  delay(500);
+  PORTB = PORTB & B11011111;
+  delay(500);
+  Serial.println("toggle");
+  */
 }
 
 
@@ -169,7 +208,7 @@ function pdm(real[0..s] x, real qe = 0) // initial running error is zero
 
 int getWavetablePDM() {
   static int count = OFFSET;  //program offset to memory where audio file is stored- maybe
-  static float error;  //making it static keeps a running total as needed
+  static float error;         //making it static keeps a running total as needed
   int intermediate;
   int output;
 
