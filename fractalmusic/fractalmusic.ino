@@ -17,6 +17,7 @@ const int VIBRATOPIN = 2;
 const int RANDOMPIN = 6;
 const int SYNCONOFFPIN = 4;
 const int RECEIVESYNCPIN = 5;
+const int GLITCHPIN = 3;
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
@@ -36,6 +37,7 @@ int VAR_ITERATIONS = 100;
 
 //other global variables- minimize use
 int arpeggiatorDuration = 500;  //default to 120BPM
+byte DEBOUNCE_DELAY = 200; //use as milliseconds
 
 /*
 flag names for state of synthesizer switches. I am using toggle switches. The switch state is
@@ -44,6 +46,7 @@ captured in the software. This means the software must track each button press a
 int VIBRATO_FLAG = 0;
 int RANDOM_FLAG = 0;
 int SYNC_FLAG = 0;
+int GLITCH_FLAG = 0;
 //flag values
 const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
@@ -75,7 +78,9 @@ void setup() {
   pinMode(RECEIVESYNCPIN, INPUT_PULLUP);
   //syn on-off pin
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
-
+  //syn on-off pin
+  pinMode(GLITCHPIN, INPUT_PULLUP);
+  
   //initialize kIndex
   fill_kIndex();
 
@@ -112,8 +117,10 @@ void setup() {
 
   //initialize initial state to match toggle switch positions
   updateSynthState();
-  //use hardware interrupt to receive trigger pulse
-  attachInterrupt(2, receiveTrigger, RISING);  //on RECEIVESYNCPIN
+  //use hardware interrupt to receive trigger pulse- format is pin, method, type of pulse
+  attachInterrupt(digitalPinToInterrupt(RECEIVESYNCPIN), receiveTrigger, RISING);  //on RECEIVESYNCPIN
+  //use hardware interrupt to receive glitch. FALLING worked better for debouncing
+  attachInterrupt(digitalPinToInterrupt(GLITCHPIN), glitchTrigger, FALLING);  //on GLITCHPIN
 }
 
 void loop() {
@@ -346,6 +353,13 @@ float getIFSProbabilty() {
     return 3;
 }
 
+
+void executeGlitch() {
+  GLITCH_FLAG = ON;
+  Serial.println("glitch"); 
+  GLITCH_FLAG = OFF;
+}
+
 /*
 Receives a trigger pulse for playback syncronization. Pulse needs to be a 5v trigger
 like from a drum machine or other synth. Needs two pulses for determining note 
@@ -363,4 +377,24 @@ void receiveTrigger() {
 #if defined(DEBUG)
   Serial.println("pulse");
 #endif
+}
+
+/*
+Acts when the glitch momentary button is pressed. Two ways to control debounce- timing, which works pretty well,
+or a flag for glitch on that will work even better. Turn on in the glitch method (not the interrupt)
+and turn off when done. IF on, the interrupt should do nothing.
+*/
+void glitchTrigger() {
+  //store in a static variable for later use
+  static long lastGlitch = 0;
+  static byte glitchCount = 0;
+  if (GLITCH_FLAG == ON || glitchCount >= 1) {
+    return;
+  }
+  else if ((millis() - lastGlitch) > DEBOUNCE_DELAY) {
+    glitchCount += 1;
+    lastGlitch = millis();
+    executeGlitch();
+    glitchCount = 0;
+  }   
 }
