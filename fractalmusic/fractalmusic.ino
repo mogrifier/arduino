@@ -2,7 +2,7 @@
 play tones. Arduino MEGA 1280.
 
 This is creating really nice and usable sync-like tones. All with with output voice. 
-Very worthwhile to put separate analog controls on the variables for freq, modRange, maxMod
+Very worthwhile to put separate analog controls on the variables for freq, vibratorate, maxMod
 and maybe loop delay.
 This is a continuous player- run through FX for sure! 
 duration should be less than loopdelay
@@ -14,11 +14,11 @@ duration should be less than loopdelay
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
 const int VIBRATOPIN = 2;
-const int RANDOMPIN = 3;
+const int RANDOMPIN = 6;
 const int SYNCONOFFPIN = 4;
-const int RECEIVESYNCPIN = 21;
+const int RECEIVESYNCPIN = 5;
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
-const int MODPIN = 0;
+const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
 const int DURATIONPIN = 2;
 
@@ -35,7 +35,7 @@ int MAXMOD_SENSOR = 10;
 int VAR_ITERATIONS = 100;
 
 //other global variables- minimize use
-int arpeggiatorDuration = 500; //default to 120BPM
+int arpeggiatorDuration = 500;  //default to 120BPM
 
 /*
 flag names for state of synthesizer switches. I am using toggle switches. The switch state is
@@ -71,7 +71,7 @@ void setup() {
   pinMode(VIBRATOPIN, INPUT_PULLUP);
   //random operation selector
   pinMode(RANDOMPIN, INPUT_PULLUP);
-  //5v trigger receive sync  
+  //5v trigger receive sync
   pinMode(RECEIVESYNCPIN, INPUT_PULLUP);
   //syn on-off pin
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
@@ -113,7 +113,7 @@ void setup() {
   //initialize initial state to match toggle switch positions
   updateSynthState();
   //use hardware interrupt to receive trigger pulse
-  attachInterrupt(2, receiveTrigger, RISING);  //digital pin 21
+  attachInterrupt(2, receiveTrigger, RISING);  //on RECEIVESYNCPIN
 }
 
 void loop() {
@@ -129,7 +129,6 @@ void loop() {
   int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
 
-  //int sensor = analogRead(MODPIN);
   /*update flags by looking for button presses. I am using toggle switches. Debounce not an issue.
   How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
   */
@@ -154,16 +153,22 @@ void loop() {
   if (SYNC_FLAG == ON) {
     //use duration calculated from trigger pulses
     duration = arpeggiatorDuration;
+#if defined(DEBUG)
+    char buffer[40];
+    sprintf(buffer, "sync is on and duration= %d", duration);
+    Serial.println(buffer);
+#endif
   }
 
-  int modRange = map(analogRead(MODPIN), 0, 1023, 5, 30);  //effectively control range and speed of vibrato
+  //hardware knob is wired backwards so changing in software so that turning knob CW increases rate as expected
+  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 30, 5);  //effectively control speed of vibrato
   //what should max value be? Need to tie better to freq - make a tunable parameter
-  //Serial.print("modrange= ");
-  //Serial.println(modRange);
+  //Serial.print("vibratorate= ");
+  //Serial.println(vibratorate);
 
   //programmable vibrato-like control.
   count++;
-  if (count % modRange == 0) {
+  if (count % vibratorate == 0) {
     //reset count (if you don't it would overflow after many hours)
     count = 0;
     if (VIBRATO_FLAG == SINE_VIBRATO) {
@@ -180,7 +185,7 @@ void loop() {
       //flip the square wave vibrato sign
       square_vibrato_sign = -square_vibrato_sign;
       //this creates a square vibrato. deltaFreq oscillates between a positive and a negative value
-      deltaFreq = square_vibrato_sign * (modRange + INC_SENSOR);
+      deltaFreq = square_vibrato_sign * (vibratorate + INC_SENSOR);
     }
   }
 
@@ -202,7 +207,8 @@ void compute_music(int &freq, int &duration) {
 
   //read sensor
   int iterSensor = analogRead(ITERATIONPIN);
-  VAR_ITERATIONS = map(iterSensor, 0, 1023, MAX_ITERATIONS, 3);
+  //hardware knob is backwards so changed here to make CW rotation increase iterations
+  VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
   totalIterations += 1;
   byte k = get_chance();
   next_x = a[k] * x + b[k] * y + e[k];
@@ -228,7 +234,12 @@ void compute_music(int &freq, int &duration) {
   300msec = 200bpm, 2000msec = 30bpm
   Apply sensor to scale duration
   */
-  int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 1, 6);
+  //knob wired backwards. Changed here so CW rotation increases speed
+  int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 6, 1);
+#if defined(DEBUG)
+  Serial.print("durationscale = ");
+  Serial.println(durationScale);
+#endif
   //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
   int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;  //int(abs(y) * 600 + 400);
 
@@ -298,16 +309,17 @@ void updateSynthState() {
   //each flag is 1 or 0
   VIBRATO_FLAG = digitalRead(VIBRATOPIN);
   byte flag = RANDOM_FLAG;
-  RANDOM_FLAG = digitalRead(RANDOMPIN);
-  //sync
-  SYNC_FLAG = digitalRead(SYNCONOFFPIN);
-    
+  //hardware switch wired backwards so NOT the value read
+  RANDOM_FLAG = !digitalRead(RANDOMPIN);
+  //sync. hardware switch wired backwards so changed value using NOT
+  SYNC_FLAG = !digitalRead(SYNCONOFFPIN);
+
   //if state goes from off to on, reset the kIndex array with new random values
   if (flag == OFF && RANDOM_FLAG == ON) {
-    //state transitioned from off to on so refill with new values
-    #if defined(DEBUG)
-        Serial.println("**********************random switched from off to on");
-    #endif
+//state transitioned from off to on so refill with new values
+#if defined(DEBUG)
+    //Serial.println("**********************random on");
+#endif
     fill_kIndex();
   }
 }
@@ -348,4 +360,7 @@ void receiveTrigger() {
   //80% of pulse interval
   arpeggiatorDuration = int((newPulse - oldPulse) * 0.8);
   oldPulse = newPulse;
+#if defined(DEBUG)
+  Serial.println("pulse");
+#endif
 }
