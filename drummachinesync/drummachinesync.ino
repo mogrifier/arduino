@@ -6,9 +6,9 @@ int count = 0;
 
 void setup() {
   // put your setup code here, to run once:
-  pinMode(21, INPUT_PULLUP);
+  pinMode(5, INPUT_PULLUP);
   Serial.begin(57600);
-  attachInterrupt(2, gotPulse, RISING);  //digital pin 21
+  attachInterrupt(2, gotPulse, RISING);  //digital pin 5
 }
 
 void loop() {

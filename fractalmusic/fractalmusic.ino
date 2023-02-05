@@ -9,15 +9,17 @@ duration should be less than loopdelay
 
 */
 
-#define DEBUG 0  //uncomment line to turn on some debug statements
+//#define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
-const int VIBRATOPIN = 2;
+const int VIBRATOMODEPIN = 5;
 const int RANDOMPIN = 6;
 const int SYNCONOFFPIN = 4;
-const int RECEIVESYNCPIN = 5;
-const int GLITCHPIN = 3;
+const int MIDIONOFFPIN = 7;
+const int RECEIVESYNCPIN = 2; //hardware interrupt
+const int GLITCHPIN = 3; //hardware interrupt
+const int TENPOSITIONPIN = 21; //hardware interrupt
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
@@ -71,16 +73,20 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   //vibrato pin; I am using the internal pullup resistor to simplify the circuit
-  pinMode(VIBRATOPIN, INPUT_PULLUP);
+  pinMode(VIBRATOMODEPIN, INPUT_PULLUP);
   //random operation selector
   pinMode(RANDOMPIN, INPUT_PULLUP);
   //5v trigger receive sync
   pinMode(RECEIVESYNCPIN, INPUT_PULLUP);
-  //syn on-off pin
+  //sync on-off pin
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
-  //syn on-off pin
+  //glitch on-off pin
   pinMode(GLITCHPIN, INPUT_PULLUP);
-  
+  //ten position switch pin
+  pinMode(TENPOSITIONPIN, INPUT_PULLUP);
+  //midi on off pin
+  pinMode(MIDIONOFFPIN, INPUT_PULLUP);
+ 
   //initialize kIndex
   fill_kIndex();
 
@@ -121,6 +127,8 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(RECEIVESYNCPIN), receiveTrigger, RISING);  //on RECEIVESYNCPIN
   //use hardware interrupt to receive glitch. FALLING worked better for debouncing
   attachInterrupt(digitalPinToInterrupt(GLITCHPIN), glitchTrigger, FALLING);  //on GLITCHPIN
+  //use hardware interrupt to activate function for ten position switch. FALLING worked better for debouncing
+  attachInterrupt(digitalPinToInterrupt(TENPOSITIONPIN), tenPositionTrigger, FALLING);  //on TENPOSITIONPIN    
 }
 
 void loop() {
@@ -314,7 +322,7 @@ Get toggle button state and update the flag variable. This uses polling and is c
 */
 void updateSynthState() {
   //each flag is 1 or 0
-  VIBRATO_FLAG = digitalRead(VIBRATOPIN);
+  VIBRATO_FLAG = digitalRead(VIBRATOMODEPIN);
   byte flag = RANDOM_FLAG;
   //hardware switch wired backwards so NOT the value read
   RANDOM_FLAG = !digitalRead(RANDOMPIN);
@@ -325,7 +333,7 @@ void updateSynthState() {
   if (flag == OFF && RANDOM_FLAG == ON) {
 //state transitioned from off to on so refill with new values
 #if defined(DEBUG)
-    //Serial.println("**********************random on");
+    Serial.println("******random on");
 #endif
     fill_kIndex();
   }
@@ -397,4 +405,14 @@ void glitchTrigger() {
     executeGlitch();
     glitchCount = 0;
   }   
+}
+
+/*
+Do something in conjunction with setting of the ten position switch. The button activates the function. Maybe.
+*/
+void tenPositionTrigger() {
+  //FIXME will need debouncing
+#if defined(DEBUG)
+  Serial.println("ten position");
+#endif  
 }
