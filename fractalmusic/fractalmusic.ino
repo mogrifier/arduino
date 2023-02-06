@@ -24,6 +24,7 @@ const int TENPOSITIONPIN = 21; //hardware interrupt
 const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
 const int DURATIONPIN = 2;
+const int VIBRATODEPTHPIN = 3;
 
 const int FREQ = 500;
 const int LOOPDELAY = 15;
@@ -33,8 +34,6 @@ const float LOWA = 27.5;
 const int MAX_ITERATIONS = 120;
 
 //these are not constant since will likely be changeable with a sensor input
-int INC_SENSOR = 3;
-int MAXMOD_SENSOR = 10;
 int VAR_ITERATIONS = 100;
 
 //other global variables- minimize use
@@ -141,6 +140,8 @@ void loop() {
   static int duration;   //how long the note will play (minimum)
   static int freq;
   static int square_vibrato_sign = 1;
+  static int sine_vibrato_sign = 1;
+  static int inc_amount = 3;
   int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
 
@@ -176,10 +177,10 @@ void loop() {
   }
 
   //hardware knob is wired backwards so changing in software so that turning knob CW increases rate as expected
-  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 30, 5);  //effectively control speed of vibrato
-  //what should max value be? Need to tie better to freq - make a tunable parameter
-  //Serial.print("vibratorate= ");
-  //Serial.println(vibratorate);
+  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 5);  //effectively control speed of vibrato
+  //depth affects pitch change and how quickly you get to new pitch when on sine version
+  int vibratodepth = map(analogRead(VIBRATODEPTHPIN), 0, 1023, 5, 150);
+  int inc_deviation = vibratodepth/5;
 
   //programmable vibrato-like control.
   count++;
@@ -187,20 +188,18 @@ void loop() {
     //reset count (if you don't it would overflow after many hours)
     count = 0;
     if (VIBRATO_FLAG == SINE_VIBRATO) {
-      //This creates a sinusoidal vibrato.
-      sineFreq += INC_SENSOR;
-      if (sineFreq >= MAXMOD_SENSOR) {
-        INC_SENSOR = -INC_SENSOR;
-      }
-      if (sineFreq <= -MAXMOD_SENSOR) {
-        INC_SENSOR = -INC_SENSOR;
+      //This creates a sinusoidal vibrato. apply modifier based on depth amount
+      sineFreq += sine_vibrato_sign * (inc_amount + inc_deviation);
+      if (sineFreq >= vibratodepth || sineFreq <= -vibratodepth) {
+      //flip the sign when out of bounds in either direction        
+        sine_vibrato_sign = -sine_vibrato_sign;
       }
       deltaFreq = sineFreq;
     } else {
       //flip the square wave vibrato sign
       square_vibrato_sign = -square_vibrato_sign;
       //this creates a square vibrato. deltaFreq oscillates between a positive and a negative value
-      deltaFreq = square_vibrato_sign * (vibratorate + INC_SENSOR);
+      deltaFreq = square_vibrato_sign * (vibratodepth);
     }
   }
 
