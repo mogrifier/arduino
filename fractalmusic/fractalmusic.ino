@@ -55,6 +55,9 @@ const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
 const int OFF = 0;
 const int ON = 1;
+//MIDI stuff
+const byte NOTEOFF = 0x80;
+const byte NOTEON = 0x90;
 
 /*
 Need buffers to store data for playback of arpeggio patterns from either a saved random
@@ -149,7 +152,7 @@ void loop() {
   //midi variables
   static byte key = 0;
   static byte velocity = 0;
-  
+  static byte lastNote;
   int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
 
@@ -158,47 +161,46 @@ void loop() {
   */
   updateSynthState();
 
-    //if MIDI on, read incoming messages
-    /*
-need to store midi state cross cycles. when a note is on, it stays on, until an off for that note is 
-sent or another note on is received (last note priority).
-if no note is on, then the synth should stop playing. It is normal to have no new midi data coming in
-while a note is being held, so just keep playing old note until a note off is received. This means loop
-for reading data will usually have nothing to read, even though note should be playing.
-
-    */
-    if (MIDI_FLAG == ON) {
-      //are there midi data bytes to read?
-      if (Serial3.available() >= 1) {
-        //read command byte
-        byte command = Serial3.read();
-        if (command == 0x90 || command == 0x80) {
-          //read data bytes
-          key = Serial3.read();
-          velocity = Serial3.read();
-        }
-        if (command == 0x90) {
-          //got new data to reset the freq value
-          freq = get_freq(key);
-        } else if (command == 0x80) {
-          //turn off the synth
-           noTone(SPEAKERPIN);
-           freq = 0;
-           return;
-        }
-        
+  byte midibytes = Serial3.available();
+  if (MIDI_FLAG == ON) {
+    //are there midi data bytes to read?
+    if (midibytes >= 1) {
+      //read command byte
+      byte command = Serial3.read();
+      //filter data for proper reading
+      if (command == NOTEOFF || command == NOTEON) {
+        //read 2 data bytes
+        key = Serial3.read();
+        velocity = Serial3.read();
+      } else {
+        //some other data- flush and ignore for now
+        Serial.flush();
       }
-      
-        //this means the note is on still
-        /*
+      if (command == NOTEON) {
+        //got new data so reset the freq value
+        freq = get_freq(key);
+        lastNote = key;
+      } else if (command == NOTEOFF) {
+        //turn off the synth only if the key matches the last note
+        if (key == lastNote) {
+          //received a note off for a matching key
+          noTone(SPEAKERPIN);
+          freq = 0;
+          return;
+        }
+      }
+    }
+
+    //this means the note is on still
+    /*
 If BURST_DURATION used, you get the dual tone like RM (the lone tone of 66Hz or so).
 With no burst duration, you can get a pure tone when using the PWM tone library. Has slight trouble
 with legato playing- not sure why. Commands out of order? too close?        */
-        tone(SPEAKERPIN, freq); //, BURST_DURATION);
-        delay(LOOPDELAY);
-      
-      return;
-    }
+    tone(SPEAKERPIN, freq);  //, BURST_DURATION);
+    delay(LOOPDELAY);
+
+    return;
+  }
 
 
   if (cycles * BURST_DURATION >= duration) {
@@ -206,9 +208,9 @@ with legato playing- not sure why. Commands out of order? too close?        */
     //reset cycle counter
     cycles = 0;
 
-      //compute new freq and duration values from IFS function
-      compute_music(freq, duration);
-    
+    //compute new freq and duration values from IFS function
+    compute_music(freq, duration);
+
 #if defined(DEBUG)
     char buffer[40];
     sprintf(buffer, "Pitch %d and duration %d", freq, duration);
