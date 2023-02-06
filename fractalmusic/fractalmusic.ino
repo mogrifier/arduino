@@ -17,9 +17,10 @@ const int VIBRATOMODEPIN = 5;
 const int RANDOMPIN = 6;
 const int SYNCONOFFPIN = 4;
 const int MIDIONOFFPIN = 7;
-const int RECEIVESYNCPIN = 2; //hardware interrupt
-const int GLITCHPIN = 3; //hardware interrupt
-const int TENPOSITIONPIN = 21; //hardware interrupt
+const int MIDIINPUTPIN = 14;    //use Tx/Rx 3 for MIDI I/O
+const int RECEIVESYNCPIN = 2;   //hardware interrupt
+const int GLITCHPIN = 3;        //hardware interrupt
+const int TENPOSITIONPIN = 21;  //hardware interrupt
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
@@ -38,7 +39,7 @@ int VAR_ITERATIONS = 100;
 
 //other global variables- minimize use
 int arpeggiatorDuration = 500;  //default to 120BPM
-byte DEBOUNCE_DELAY = 200; //use as milliseconds
+byte DEBOUNCE_DELAY = 200;      //use as milliseconds
 
 /*
 flag names for state of synthesizer switches. I am using toggle switches. The switch state is
@@ -48,6 +49,7 @@ int VIBRATO_FLAG = 0;
 int RANDOM_FLAG = 0;
 int SYNC_FLAG = 0;
 int GLITCH_FLAG = 0;
+int MIDI_FLAG = 0;
 //flag values
 const int SINE_VIBRATO = 0;
 const int SQUARE_VIBRATO = 1;
@@ -71,6 +73,8 @@ float f[4];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
+  //MIDI is hooked up to Rx (and Tx, if dsired later) on RX/Tx3, pins 1
+  Serial3.begin(31250);
   //vibrato pin; I am using the internal pullup resistor to simplify the circuit
   pinMode(VIBRATOMODEPIN, INPUT_PULLUP);
   //random operation selector
@@ -85,7 +89,7 @@ void setup() {
   pinMode(TENPOSITIONPIN, INPUT_PULLUP);
   //midi on off pin
   pinMode(MIDIONOFFPIN, INPUT_PULLUP);
- 
+
   //initialize kIndex
   fill_kIndex();
 
@@ -127,7 +131,7 @@ void setup() {
   //use hardware interrupt to receive glitch. FALLING worked better for debouncing
   attachInterrupt(digitalPinToInterrupt(GLITCHPIN), glitchTrigger, FALLING);  //on GLITCHPIN
   //use hardware interrupt to activate function for ten position switch. FALLING worked better for debouncing
-  attachInterrupt(digitalPinToInterrupt(TENPOSITIONPIN), tenPositionTrigger, FALLING);  //on TENPOSITIONPIN    
+  attachInterrupt(digitalPinToInterrupt(TENPOSITIONPIN), tenPositionTrigger, FALLING);  //on TENPOSITIONPIN
 }
 
 void loop() {
@@ -142,6 +146,10 @@ void loop() {
   static int square_vibrato_sign = 1;
   static int sine_vibrato_sign = 1;
   static int inc_amount = 3;
+  //midi variables
+  static byte key = 0;
+  static byte velocity = 0;
+  
   int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
 
@@ -150,12 +158,57 @@ void loop() {
   */
   updateSynthState();
 
+    //if MIDI on, read incoming messages
+    /*
+need to store midi state cross cycles. when a note is on, it stays on, until an off for that note is 
+sent or another note on is received (last note priority).
+if no note is on, then the synth should stop playing. It is normal to have no new midi data coming in
+while a note is being held, so just keep playing old note until a note off is received. This means loop
+for reading data will usually have nothing to read, even though note should be playing.
+
+    */
+    if (MIDI_FLAG == ON) {
+      //are there midi data bytes to read?
+      if (Serial3.available() >= 1) {
+        //read command byte
+        byte command = Serial3.read();
+        if (command == 0x90 || command == 0x80) {
+          //read data bytes
+          key = Serial3.read();
+          velocity = Serial3.read();
+        }
+        if (command == 0x90) {
+          //got new data to reset the freq value
+          freq = get_freq(key);
+        } else if (command == 0x80) {
+          //turn off the synth
+           noTone(SPEAKERPIN);
+           freq = 0;
+           return;
+        }
+        
+      }
+      
+        //this means the note is on still
+        /*
+If BURST_DURATION used, you get the dual tone like RM (the lone tone of 66Hz or so).
+With no burst duration, you can get a pure tone when using the PWM tone library. Has slight trouble
+with legato playing- not sure why. Commands out of order? too close?        */
+        tone(SPEAKERPIN, freq); //, BURST_DURATION);
+        delay(LOOPDELAY);
+      
+      return;
+    }
+
+
   if (cycles * BURST_DURATION >= duration) {
     //note has played for at least the amount of milliseconds specified so get a new note
     //reset cycle counter
     cycles = 0;
-    //compute new freq and duration values
-    compute_music(freq, duration);
+
+      //compute new freq and duration values from IFS function
+      compute_music(freq, duration);
+    
 #if defined(DEBUG)
     char buffer[40];
     sprintf(buffer, "Pitch %d and duration %d", freq, duration);
@@ -180,7 +233,7 @@ void loop() {
   int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 5);  //effectively control speed of vibrato
   //depth affects pitch change and how quickly you get to new pitch when on sine version
   int vibratodepth = map(analogRead(VIBRATODEPTHPIN), 0, 1023, 5, 150);
-  int inc_deviation = vibratodepth/5;
+  int inc_deviation = vibratodepth / 5;
 
   //programmable vibrato-like control.
   count++;
@@ -191,7 +244,7 @@ void loop() {
       //This creates a sinusoidal vibrato. apply modifier based on depth amount
       sineFreq += sine_vibrato_sign * (inc_amount + inc_deviation);
       if (sineFreq >= vibratodepth || sineFreq <= -vibratodepth) {
-      //flip the sign when out of bounds in either direction        
+        //flip the sign when out of bounds in either direction
         sine_vibrato_sign = -sine_vibrato_sign;
       }
       deltaFreq = sineFreq;
@@ -327,6 +380,7 @@ void updateSynthState() {
   RANDOM_FLAG = !digitalRead(RANDOMPIN);
   //sync. hardware switch wired backwards so changed value using NOT
   SYNC_FLAG = !digitalRead(SYNCONOFFPIN);
+  MIDI_FLAG = !digitalRead(MIDIONOFFPIN);
 
   //if state goes from off to on, reset the kIndex array with new random values
   if (flag == OFF && RANDOM_FLAG == ON) {
@@ -363,7 +417,7 @@ float getIFSProbabilty() {
 
 void executeGlitch() {
   GLITCH_FLAG = ON;
-  Serial.println("glitch"); 
+  Serial.println("glitch");
   GLITCH_FLAG = OFF;
 }
 
@@ -397,13 +451,12 @@ void glitchTrigger() {
   static byte glitchCount = 0;
   if (GLITCH_FLAG == ON || glitchCount >= 1) {
     return;
-  }
-  else if ((millis() - lastGlitch) > DEBOUNCE_DELAY) {
+  } else if ((millis() - lastGlitch) > DEBOUNCE_DELAY) {
     glitchCount += 1;
     lastGlitch = millis();
     executeGlitch();
     glitchCount = 0;
-  }   
+  }
 }
 
 /*
@@ -413,5 +466,5 @@ void tenPositionTrigger() {
   //FIXME will need debouncing
 #if defined(DEBUG)
   Serial.println("ten position");
-#endif  
+#endif
 }
