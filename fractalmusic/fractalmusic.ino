@@ -362,6 +362,8 @@ void init_xy(float &x, float &y) {
 Convert the piano key position (1 to 88) to the corresponding frequency
 */
 int get_freq(int key) {
+  //adjust for difference between piano and midi numbering
+  key = key + 4;
   int octave = (int)(key / 12);
   int note = (key % 12) - 1;
   float freq = LOWA * pow(2, octave) * pow(TWELFTHROOT, note);
