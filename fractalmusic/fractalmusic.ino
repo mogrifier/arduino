@@ -9,7 +9,7 @@ duration should be less than loopdelay
 
 */
 
-//#define DEBUG 0  //uncomment line to turn on some debug statements
+#define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
@@ -26,10 +26,14 @@ const int VIBRATORATEPIN = 0;
 const int ITERATIONPIN = 1;
 const int DURATIONPIN = 2;
 const int VIBRATODEPTHPIN = 3;
+//the matrix sensors A5-A8 for arrays a (all 4 values draw from it); data range [-1, 1]
+const int M1PIN = 8;
+const int M2PIN = 7;
+const int BURSTPIN = 5;
+int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 
 const int FREQ = 500;
 const int LOOPDELAY = 15;
-const int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
 const int MAX_ITERATIONS = 120;
@@ -160,6 +164,7 @@ void loop() {
   How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
   */
   updateSynthState();
+  BURST_DURATION = map(analogRead(BURSTPIN), 0, 1023, 4, 40);
 
   byte midibytes = Serial3.available();
   if (MIDI_FLAG == ON) {
@@ -192,17 +197,13 @@ void loop() {
     }
 
     //this means the note is on still
-    /*
-If BURST_DURATION used, you get the dual tone like RM (the lone tone of 66Hz or so).
-With no burst duration, you can get a pure tone when using the PWM tone library. Has slight trouble
-with legato playing- not sure why. Commands out of order? too close?        */
-    tone(SPEAKERPIN, freq);  //, BURST_DURATION);
+    /* BURST_DURATION is now controlled by analog 4 value. This allows turning it and off and also something in between.       */
+    tone(SPEAKERPIN, freq, BURST_DURATION);
     delay(LOOPDELAY);
 
     return;
   }
-
-
+ 
   if (cycles * BURST_DURATION >= duration) {
     //note has played for at least the amount of milliseconds specified so get a new note
     //reset cycle counter
@@ -278,9 +279,17 @@ void compute_music(int &freq, int &duration) {
   int iterSensor = analogRead(ITERATIONPIN);
   //hardware knob is backwards so changed here to make CW rotation increase iterations
   VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
+
+//read the knobs for reassiging the matrix array values   (not trying all- this is also an experiment)
+  a[1] = getNormedFloat(M1PIN);
+  c[1] = getNormedFloat(M2PIN);
+  
+  
   totalIterations += 1;
   byte k = get_chance();
+  //pitch
   next_x = a[k] * x + b[k] * y + e[k];
+  //duration
   next_y = c[k] * x + d[k] * y + f[k];
   x = next_x;
   y = next_y;
@@ -288,6 +297,10 @@ void compute_music(int &freq, int &duration) {
 #if defined(DEBUG)
   Serial.print("raw x = ");
   Serial.println(x);
+    Serial.print("a[0] = ");
+  Serial.println(a[0]);
+    Serial.print("c[0] = ");
+  Serial.println(c[0]);
 #endif
 
   //the next note to play is next_x with a duration of next_y
@@ -304,13 +317,13 @@ void compute_music(int &freq, int &duration) {
   Apply sensor to scale duration
   */
   //knob wired backwards. Changed here so CW rotation increases speed
-  int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 6, 1);
+  int durationScale = map(analogRead(DURATIONPIN), 0, 1023, 8, 1);
 #if defined(DEBUG)
   Serial.print("durationscale = ");
   Serial.println(durationScale);
 #endif
   //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
-  int scale_y = map(abs(y), 0, 10, 125, 1375) * durationScale;  //int(abs(y) * 600 + 400);
+  int scale_y = map(abs(y), 0, 10, 25, 1375) * durationScale;  //int(abs(y) * 600 + 400);
 
   //assign values to the variable references so changes are seen in the loop function
   freq = get_freq(piano_key);
@@ -471,4 +484,14 @@ void tenPositionTrigger() {
 #if defined(DEBUG)
   Serial.println("ten position");
 #endif
+}
+
+
+/*
+Read matrix pin and convert value to range -1 to 1 as a float. Like map but for floats
+*/
+float getNormedFloat(int sensor) {
+  int matrix = analogRead(sensor);
+  //convert to -1 - 1
+  return ((float)matrix / 1023) * 2.0 - 1.0;
 }
