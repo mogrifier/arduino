@@ -226,9 +226,21 @@ void loop() {
   if (SYNC_FLAG == ON) {
     //use duration calculated from trigger pulses
     duration = arpeggiatorDuration;
+    /*modify duration using duration_scale setting. Some synths don't send tempo but instead send the arpeggiator division.
+    This causes extremely rapid playback that may be undesirable. Thus, allow the user to control the division or multiplication
+    at the Grimoire. Need to allow changes in both directions. Implementation does nothing if knob is centered roughly and outputting
+    -1 to 1.    
+    */
+    int arpScale = map(analogRead(DURATIONPIN), 0, 1023, 8, -8);
+    if (arpScale > 1) {
+      duration = duration * arpScale;
+    } else if (arpScale < -1) {
+      duration = duration / abs(arpScale);
+    }
+
 #if defined(DEBUG)
     char buffer[40];
-    sprintf(buffer, "sync is on and duration= %d", duration);
+    sprintf(buffer, "sync is on and duration= %d and scale = %d", duration, arpScale);
     Serial.println(buffer);
 #endif
   }
