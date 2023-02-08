@@ -121,10 +121,11 @@ void setup() {
   d[2] = 0.22;
   d[3] = 0.44;
 
-  e[0] = 0;
-  e[1] = 0;
-  e[2] = 0;
-  e[3] = 0;
+  //made these non-zero since they were driving x to zero, which is boring
+  e[0] = 0.1;
+  e[1] = 0.2;
+  e[2] = 0.05;
+  e[3] = 0.3;
 
   f[0] = 0;
   f[1] = 1.6;
@@ -203,7 +204,7 @@ void loop() {
 
     return;
   }
- 
+
   if (cycles * BURST_DURATION >= duration) {
     //note has played for at least the amount of milliseconds specified so get a new note
     //reset cycle counter
@@ -279,14 +280,17 @@ void compute_music(int &freq, int &duration) {
   int iterSensor = analogRead(ITERATIONPIN);
   //hardware knob is backwards so changed here to make CW rotation increase iterations
   VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
-
-//read the knobs for reassiging the matrix array values   (not trying all- this is also an experiment)
-  a[1] = getNormedFloat(M1PIN);
-  c[1] = getNormedFloat(M2PIN);
-  
-  
   totalIterations += 1;
   byte k = get_chance();
+
+  //read the knobs for reassigning the matrix array values   (not trying all- this is also an experiment)
+  //a[k] = getNormedFloat(M1PIN);
+  //d[k] = getNormedFloat(M2PIN);
+  //how to activate these changes? don't want all the time.
+
+  /* Note that not all matrix values are read for computation of next values. This prevents changes
+  to values being included in the calculation must of the time, depending on how get_chance() is weighed.
+  Array slot 2 is the highest probability, followed by 3.*/
   //pitch
   next_x = a[k] * x + b[k] * y + e[k];
   //duration
@@ -294,13 +298,21 @@ void compute_music(int &freq, int &duration) {
   x = next_x;
   y = next_y;
 
+  //need to watch for overflow and nan conditions. seems odd, but does happen
+  if (isnan(x)) {
+    x = 0.1;
+  }
+  if (isnan(y)) {
+    y = 0.3;
+  }
+  //can test for nan but not ovf. Hopefully the nan check will prevent ovf.
+
+
 #if defined(DEBUG)
-  Serial.print("raw x = ");
+  Serial.print("x = ");
   Serial.println(x);
-    Serial.print("a[0] = ");
-  Serial.println(a[0]);
-    Serial.print("c[0] = ");
-  Serial.println(c[0]);
+  Serial.print("y = ");
+  Serial.println(y);
 #endif
 
   //the next note to play is next_x with a duration of next_y
@@ -335,7 +347,7 @@ void compute_music(int &freq, int &duration) {
   Serial.println(buffer);
 #endif
   if (totalIterations >= VAR_ITERATIONS) {
-    //reset to new starting point for iteration
+    //reset to new starting point for iteration (only changes values if Random is on)
     init_xy(x, y);
     totalIterations = 0;
   }
