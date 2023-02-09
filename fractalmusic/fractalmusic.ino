@@ -29,7 +29,7 @@ const int VIBRATODEPTHPIN = 3;
 const int DURATIONPIN = 4;
 //the matrix sensors A5-A8 for arrays a (all 4 values draw from it); data range [-1, 1]
 const int M1PIN = 8;
-const int M2PIN = 7;
+const int CHAOSPIN = 7;
 const int BURSTPIN = 5;
 int BURST_DURATION = 12;  //you can hear down to 11ms or so. combined with LOOPDELAY this creates extra sync sound
 
@@ -284,7 +284,9 @@ int getVibrato() {
 /*
 Get the next pitch and duration from the IFS code. Just compute all as needed. This use two knobs to determine
 the start and end point fo the pattern to play with the entire pattern. If the knbos values are bad (start > end)
-then a start of zero is used.
+then a start of zero is used. Chaos controls the range of pitch and duration values. Low value of chaos (order) means
+pitch and duration will not have as extreme jumps since the range is tighter. Max chaos equates to max range of 
+pitch and duration.
 */
 void compute_music(int &freq, int &duration) {
   static int totalIterations;
@@ -303,11 +305,6 @@ void compute_music(int &freq, int &duration) {
   }
   totalIterations += 1;
   byte k = get_chance();
-
-  //read the knobs for reassigning the matrix array values   (not trying all- this is also an experiment)
-  //a[k] = getNormedFloat(M1PIN);
-  //d[k] = getNormedFloat(M2PIN);
-  //how to activate these changes? don't want all the time.
 
   /* Note that not all matrix values are read for computation of next values. This prevents changes
   to values being included in the calculation must of the time, depending on how get_chance() is weighed.
@@ -343,8 +340,14 @@ void compute_music(int &freq, int &duration) {
   if (scale_x > 100) {
     scale_x = 100;
   }
+
+  /* apply Chaos control to mapping function applied to sensor. The top note can be reduced by 
+  a 1.5 octaves while maintaining a good distriubtion. This works in conjuction with duration change.
+  Order means lower high pitch, and higher minimum duration.
+  */
+  int maxNote = map(analogRead(CHAOSPIN), 0, 1023, 56, 74);
   //constrain the piano key range to one the arduino can play and also not too high since unpleasant
-  int piano_key = map(scale_x, 0, 100, 25, 74);
+  int piano_key = map(scale_x, 0, 100, 25, maxNote);
   /*y has a range up to 10 or so. The map gives a set of discrete values in 125msec intervals.
   300msec = 200bpm, 2000msec = 30bpm
   Apply sensor to scale duration
@@ -355,9 +358,11 @@ void compute_music(int &freq, int &duration) {
   Serial.print("durationscale = ");
   Serial.println(durationScale);
 #endif
-  //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
-  int scale_y = map(abs(y), 0, 10, 25, 1375) * durationScale;  //int(abs(y) * 600 + 400);
 
+  //10 * 125 = 1250. why 125? 1/8th of 1000. Implicit 60BPM timebase.
+  //apply chaos control to allow setting a higher minimum duration
+  int minDuration = map(analogRead(CHAOSPIN), 0, 1023, 200, 25);
+  int scale_y = map(abs(y), 0, 10, minDuration, 1375) * durationScale;  //int(abs(y) * 600 + 400);
   //assign values to the variable references so changes are seen in the loop function
   freq = get_freq(piano_key);
   duration = scale_y;
