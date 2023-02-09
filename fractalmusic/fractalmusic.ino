@@ -145,20 +145,15 @@ void setup() {
 void loop() {
 
   //some variable values need to be saved between calls to loop so declare them as static
-  static int cycles;     //for calculating how long a note has played
-  static int count;      //
-  static int sineFreq;   //sine vibrato
-  static int deltaFreq;  //total vibrato to apply
-  static int duration;   //how long the note will play (minimum)
+  static int cycles;               //for calculating how long a note has played
+  static int vibFreq;              //total vibrato to apply
+  static int ENABLE_VIBRATO = ON;  //during note off under midi play, you must not add vibrato to freq (or it can play)
+  static int duration;             //how long the note will play (minimum)
   static int freq;
-  static int square_vibrato_sign = 1;
-  static int sine_vibrato_sign = 1;
-  static int inc_amount = 3;
   //midi variables
   static byte key = 0;
   static byte velocity = 0;
   static byte lastNote;
-  int squareFreq;  //square vibrato- calculated, not saved
   // put your main code here, to run repeatedly:
 
   /*update flags by looking for button presses. I am using toggle switches. Debounce not an issue.
@@ -186,12 +181,14 @@ void loop() {
         //got new data so reset the freq value
         freq = get_freq(key);
         lastNote = key;
+        ENABLE_VIBRATO = ON;
       } else if (command == NOTEOFF) {
         //turn off the synth only if the key matches the last note
         if (key == lastNote) {
           //received a note off for a matching key
           noTone(SPEAKERPIN);
           freq = 0;
+          ENABLE_VIBRATO = OFF;
           return;
         }
       }
@@ -199,9 +196,14 @@ void loop() {
 
     //this means the note is on still
     /* BURST_DURATION is now controlled by analog 4 value. This allows turning it and off and also something in between.       */
-    tone(SPEAKERPIN, freq, BURST_DURATION);
-    delay(LOOPDELAY);
+    if (ENABLE_VIBRATO == ON) {
+      vibFreq = getVibrato();
+    } else {
+      vibFreq = 0;
+    }
 
+    tone(SPEAKERPIN, freq + vibFreq, BURST_DURATION);
+    delay(LOOPDELAY);
     return;
   }
 
@@ -227,11 +229,25 @@ void loop() {
     //use duration calculated from trigger pulses
     duration = arpeggiatorDuration;
 #if defined(DEBUG)
-  //  char buffer[40];
-   // sprintf(buffer, "sync is on and duration= %d and scale = %d", duration, arpScale);
-   // Serial.println(buffer);
+    //  char buffer[40];
+    // sprintf(buffer, "sync is on and duration= %d and scale = %d", duration, arpScale);
+    // Serial.println(buffer);
 #endif
   }
+
+  vibFreq = getVibrato();
+  tone(SPEAKERPIN, freq + vibFreq, BURST_DURATION);
+  delay(LOOPDELAY);
+}
+
+
+int getVibrato() {
+  static int count;  //
+  static int inc_amount = 3;
+  static int sineFreq;   //sine vibrato
+  static int deltaFreq;  //total vibrato to apply
+  static int square_vibrato_sign = 1;
+  static int sine_vibrato_sign = 1;
 
   //hardware knob is wired backwards so changing in software so that turning knob CW increases rate as expected
   int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 5);  //effectively control speed of vibrato
@@ -260,10 +276,8 @@ void loop() {
     }
   }
 
-  tone(SPEAKERPIN, freq + deltaFreq, BURST_DURATION);
-  delay(LOOPDELAY);
+  return deltaFreq;
 }
-
 
 /*
 Get the next pitch and duration from the IFS code. Just compute all as needed.
@@ -461,25 +475,24 @@ void receiveTrigger() {
   long newPulse;
   //I see pulse accuracy of +-1 millisecond which is fine
   newPulse = millis();
-  arpeggiatorDuration = int((newPulse - oldPulse));// * 0.8);
-    /*modify duration using duration_scale setting. Some synths don't send tempo but instead send the arpeggiator division.
+  arpeggiatorDuration = int((newPulse - oldPulse));  // * 0.8);
+  /*modify duration using duration_scale setting. Some synths don't send tempo but instead send the arpeggiator division.
     This causes extremely rapid playback that may be undesirable. Thus, allow the user to control the division or multiplication
     at the Grimoire. Need to allow changes in both directions. Implementation does nothing if knob is centered roughly and outputting
     -1 to 1.    
 
     This is milliseconds, not tempo.
     */
-    int arpScale = map(analogRead(DURATIONPIN), 0, 1023, 8, -8);
-    if (arpScale > 1) {
-      arpeggiatorDuration = arpeggiatorDuration * arpScale;
-    } else if (arpScale < -1) {
-      arpeggiatorDuration = arpeggiatorDuration / abs(arpScale);
-    }
-  
+  int arpScale = map(analogRead(DURATIONPIN), 0, 1023, 8, -8);
+  if (arpScale > 1) {
+    arpeggiatorDuration = arpeggiatorDuration * arpScale;
+  } else if (arpScale < -1) {
+    arpeggiatorDuration = arpeggiatorDuration / abs(arpScale);
+  }
+
   oldPulse = newPulse;
 
   Serial.println(arpeggiatorDuration);
-
 }
 
 /*
