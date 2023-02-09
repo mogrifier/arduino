@@ -9,7 +9,7 @@ duration should be less than loopdelay
 
 */
 
-//#define DEBUG 0  //uncomment line to turn on some debug statements
+#define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
@@ -23,9 +23,10 @@ const int GLITCHPIN = 3;        //hardware interrupt
 const int TENPOSITIONPIN = 21;  //hardware interrupt
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int VIBRATORATEPIN = 0;
-const int ITERATIONPIN = 1;
-const int DURATIONPIN = 2;
+const int ITERATIONENDPIN = 1;
+const int ITERATIONSTARTPIN = 2;
 const int VIBRATODEPTHPIN = 3;
+const int DURATIONPIN = 4;
 //the matrix sensors A5-A8 for arrays a (all 4 values draw from it); data range [-1, 1]
 const int M1PIN = 8;
 const int M2PIN = 7;
@@ -36,10 +37,11 @@ const int FREQ = 500;
 const int LOOPDELAY = 15;
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
-const int MAX_ITERATIONS = 120;
+const int MAX_ITERATIONS = 250;
 
-//these are not constant since will likely be changeable with a sensor input
-int VAR_ITERATIONS = 100;
+//these are not constant and will be changeable with sensor inputs
+int END_ITERATION = 100;
+int START_ITERATION = 0;
 
 //other global variables- minimize use
 int arpeggiatorDuration = 500;  //default to 120BPM
@@ -280,7 +282,9 @@ int getVibrato() {
 }
 
 /*
-Get the next pitch and duration from the IFS code. Just compute all as needed.
+Get the next pitch and duration from the IFS code. Just compute all as needed. This use two knobs to determine
+the start and end point fo the pattern to play with the entire pattern. If the knbos values are bad (start > end)
+then a start of zero is used.
 */
 void compute_music(int &freq, int &duration) {
   static int totalIterations;
@@ -290,10 +294,13 @@ void compute_music(int &freq, int &duration) {
   static float next_x;
   static float next_y;
 
-  //read sensor
-  int iterSensor = analogRead(ITERATIONPIN);
   //hardware knob is backwards so changed here to make CW rotation increase iterations
-  VAR_ITERATIONS = map(iterSensor, 0, 1023, 3, MAX_ITERATIONS);
+  END_ITERATION = map(analogRead(ITERATIONENDPIN), 0, 1023, 3, MAX_ITERATIONS);
+  //start can begin at zero; also wired backwards
+  START_ITERATION = map(analogRead(ITERATIONSTARTPIN), 0, 1023, 0, MAX_ITERATIONS);
+  if (START_ITERATION > END_ITERATION){
+    START_ITERATION = 0;
+  }
   totalIterations += 1;
   byte k = get_chance();
 
@@ -357,13 +364,14 @@ void compute_music(int &freq, int &duration) {
 
 #if defined(DEBUG)
   char buffer[20];
-  sprintf(buffer, "Variable iterations limit = %d ", VAR_ITERATIONS);
+  sprintf(buffer, "Iteration start = %d; end = %d", START_ITERATION, END_ITERATION);
   Serial.println(buffer);
 #endif
-  if (totalIterations >= VAR_ITERATIONS) {
+
+  if (totalIterations >= END_ITERATION) {
     //reset to new starting point for iteration (only changes values if Random is on)
     init_xy(x, y);
-    totalIterations = 0;
+    totalIterations = START_ITERATION;
   }
 }
 
@@ -375,9 +383,9 @@ byte get_chance() {
   if (RANDOM_FLAG == ON) {
     return getIFSProbabilty();
   } else {
-    //random off- just return next value from kIndex (up to VAR_ITERATIONS) or start over at 0
-    if (index == VAR_ITERATIONS) {
-      index = 0;
+    //random off- just return next value from kIndex (up to END_ITERATIONs) or start over at start (which can be zero)
+    if (index == END_ITERATION) {
+      index = START_ITERATION;
     }
     //index will either be 0 or the next value. This logic keeps it in range.
     return kIndex[index++];
@@ -533,3 +541,5 @@ float getNormedFloat(int sensor) {
   //convert to -1 - 1
   return ((float)matrix / 1023) * 2.0 - 1.0;
 }
+
+
