@@ -17,10 +17,10 @@ const int VIBRATOMODEPIN = 5;
 const int RANDOMPIN = 6;
 const int SYNCONOFFPIN = 4;
 const int MIDIONOFFPIN = 7;
-const int MIDIINPUTPIN = 14;    //use Tx/Rx 3 for MIDI I/O
-const int RECEIVESYNCPIN = 2;   //hardware interrupt
-const int GLITCHPIN = 3;        //hardware interrupt
-const int TENPOSITIONPIN = 21;  //hardware interrupt
+const int MIDIINPUTPIN = 14;   //use Tx/Rx 3 for MIDI I/O
+const int RECEIVESYNCPIN = 2;  //hardware interrupt
+const int GLITCHPIN = 3;       //hardware interrupt
+const int RESETPIN = 21;       //hardware interrupt
 //analog pins for continuous sensors, like potentiometers or other sources of 1-5v
 const int VIBRATORATEPIN = 0;
 const int ITERATIONENDPIN = 1;
@@ -80,6 +80,9 @@ float d[4];
 float e[4];
 float f[4];
 
+
+void (*resetFunc)(void) = 0;  //declare reset function at address 0
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -95,8 +98,8 @@ void setup() {
   pinMode(SYNCONOFFPIN, INPUT_PULLUP);
   //glitch on-off pin
   pinMode(GLITCHPIN, INPUT_PULLUP);
-  //ten position switch pin
-  pinMode(TENPOSITIONPIN, INPUT_PULLUP);
+  //button for reset
+  pinMode(RESETPIN, INPUT_PULLUP);
   //midi on off pin
   pinMode(MIDIONOFFPIN, INPUT_PULLUP);
 
@@ -142,8 +145,10 @@ void setup() {
   //use hardware interrupt to receive glitch. FALLING worked better for debouncing
   attachInterrupt(digitalPinToInterrupt(GLITCHPIN), glitchTrigger, FALLING);  //on GLITCHPIN
   //use hardware interrupt to activate function for ten position switch. FALLING worked better for debouncing
-  attachInterrupt(digitalPinToInterrupt(TENPOSITIONPIN), tenPositionTrigger, FALLING);  //on TENPOSITIONPIN
+  attachInterrupt(digitalPinToInterrupt(RESETPIN), reset, FALLING);  //on RESETPIN
+  Serial.println("setup complete");
 }
+
 
 void loop() {
 
@@ -548,13 +553,19 @@ void glitchTrigger() {
 }
 
 /*
-Do something in conjunction with setting of the ten position switch. The button activates the function. Maybe.
+Allows reset of the microcontroller. superfast by the way.
 */
-void tenPositionTrigger() {
-  //FIXME will need debouncing
-#if defined(DEBUG)
-  Serial.println("ten position");
-#endif
+void reset() {
+  static long lastReset = 0;
+  static byte resetCount = 0;
+  if (resetCount >= 1) {
+    return;
+  } else if ((millis() - lastReset) > DEBOUNCE_DELAY) {
+    resetCount += 1;
+    lastReset = millis();
+    resetCount = 0;
+    resetFunc();  //call reset
+  }
 }
 
 
