@@ -150,9 +150,10 @@ void loop() {
   //some variable values need to be saved between calls to loop so declare them as static
   static int cycles;               //for calculating how long a note has played
   static int vibFreq;              //total vibrato to apply
-  static int ENABLE_VIBRATO = ON;  //during note off under midi play, you must not add vibrato to freq (or it can play)
+  static int ENABLE_VIBRATO = OFF;  //during note off under midi play, you must not add vibrato to freq (or it can play)
   static int duration;             //how long the note will play (minimum)
   static int freq;
+  static int midifreq;  
   //midi variables
   static byte key = 0;
   static byte velocity = 0;
@@ -183,7 +184,7 @@ void loop() {
       }
       if (command == NOTEON) {
         //got new data so reset the freq value
-        freq = get_freq(key);
+        midifreq = get_freq(key);
         lastNote = key;
         ENABLE_VIBRATO = ON;
       } else if (command == NOTEOFF) {
@@ -191,7 +192,7 @@ void loop() {
         if (key == lastNote) {
           //received a note off for a matching key
           noTone(SPEAKERPIN);
-          freq = 0;
+          midifreq = 0;
           velocity = 0;
           ENABLE_VIBRATO = OFF;
           return;
@@ -220,7 +221,7 @@ void loop() {
       vibFreq = 0;
     }
 
-    tone(SPEAKERPIN, freq + vibFreq, BURST_DURATION);
+    tone(SPEAKERPIN, midifreq + vibFreq, BURST_DURATION);
     delay(LOOPDELAY);
 
     return;
@@ -253,7 +254,7 @@ void loop() {
     // Serial.println(buffer);
 #endif
   }
-
+  
   vibFreq = getVibrato();
   tone(SPEAKERPIN, freq + vibFreq, BURST_DURATION);
   delay(LOOPDELAY);
@@ -262,14 +263,21 @@ void loop() {
 
 int getVibrato() {
   static int count;  //
-  static int inc_amount = 3;
+  static int inc_amount = 2;
   static int sineFreq;   //sine vibrato
   static int deltaFreq;  //total vibrato to apply
   static int square_vibrato_sign = 1;
   static int sine_vibrato_sign = 1;
 
   //hardware knob is wired backwards so changing in software so that turning knob CW increases rate as expected
-  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 0);  //effectively control speed of vibrato
+  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 55, 5);  //effectively control speed of vibrato
+
+  if (vibratorate > 50){
+    //high rate number = low actual rate, since it increases delay between pitch changes. sorry.
+    //no vibrato
+    return 0;
+  }
+
   //depth affects pitch change and how quickly you get to new pitch when on sine version
   int vibratodepth = map(analogRead(VIBRATODEPTHPIN), 0, 1023, 5, 150);
   int inc_deviation = vibratodepth / 5;
