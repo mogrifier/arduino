@@ -283,8 +283,8 @@ int getVibrato() {
 
 /*
 Get the next pitch and duration from the IFS code. Just compute all as needed. This use two knobs to determine
-the start and end point fo the pattern to play with the entire pattern. If the knbos values are bad (start > end)
-then a start of zero is used. Chaos controls the range of pitch and duration values. Low value of chaos (order) means
+the start and end point fo the pattern to play with the entire pattern. If the knbos values are bad (end < start)
+then an end value of start + 10 is used. Chaos controls the range of pitch and duration values. Low value of chaos (order) means
 pitch and duration will not have as extreme jumps since the range is tighter. Max chaos equates to max range of 
 pitch and duration.
 */
@@ -301,7 +301,7 @@ void compute_music(int &freq, int &duration) {
   //start can begin at zero; also wired backwards
   START_ITERATION = map(analogRead(ITERATIONSTARTPIN), 0, 1023, 0, MAX_ITERATIONS);
   if (START_ITERATION > END_ITERATION){
-    START_ITERATION = 0;
+    END_ITERATION = START_ITERATION + 10;
   }
   totalIterations += 1;
   byte k = get_chance();
