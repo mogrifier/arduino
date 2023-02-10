@@ -9,7 +9,7 @@ duration should be less than loopdelay
 
 */
 
-#define DEBUG 0  //uncomment line to turn on some debug statements
+//#define DEBUG 0  //uncomment line to turn on some debug statements
 
 //digital pins for sensing switch position (don't use 0 or 1 since for serial data)
 const int SPEAKERPIN = 9;
@@ -38,7 +38,8 @@ const int LOOPDELAY = 15;
 const float TWELFTHROOT = 1.05946;
 const float LOWA = 27.5;
 const int MAX_ITERATIONS = 250;
-
+const int MINBURST = 4;
+const int MAXBURST = 25;
 //these are not constant and will be changeable with sensor inputs
 int END_ITERATION = 100;
 int START_ITERATION = 0;
@@ -155,6 +156,7 @@ void loop() {
   //midi variables
   static byte key = 0;
   static byte velocity = 0;
+  static byte command;
   static byte lastNote;
   // put your main code here, to run repeatedly:
 
@@ -162,14 +164,14 @@ void loop() {
   How you do this depends on the type of switches you use. Momentary means use interrupt, toggle means poll.
   */
   updateSynthState();
-  BURST_DURATION = map(analogRead(BURSTPIN), 0, 1023, 4, 40);
+  BURST_DURATION = map(analogRead(BURSTPIN), 0, 1023, MINBURST, MAXBURST);
 
   byte midibytes = Serial3.available();
   if (MIDI_FLAG == ON) {
     //are there midi data bytes to read?
     if (midibytes >= 1) {
       //read command byte
-      byte command = Serial3.read();
+      command = Serial3.read();
       //filter data for proper reading
       if (command == NOTEOFF || command == NOTEON) {
         //read 2 data bytes
@@ -190,12 +192,26 @@ void loop() {
           //received a note off for a matching key
           noTone(SPEAKERPIN);
           freq = 0;
+          velocity = 0;
           ENABLE_VIBRATO = OFF;
           return;
         }
       }
     }
 
+    /* modify burst duration with velocity. high velocity causes LOWER burst duration to add RM tone.
+    start changing burst duration. be sure to keep in legal range. velocity is remembered so will be applied until
+    new value comes in.*/
+
+    if (velocity > 80) {
+      //high enough, I think
+      int range = MAXBURST - MINBURST;
+      int delta = (int)((velocity - 80) * (float)(range / 48.0));  //48 is 128 - 80 (midi stuff)
+      BURST_DURATION = BURST_DURATION - delta;
+      if (BURST_DURATION < MINBURST) {
+        BURST_DURATION = MINBURST;
+      }
+    }
     //this means the note is on still
     /* BURST_DURATION is now controlled by analog 4 value. This allows turning it and off and also something in between.       */
     if (ENABLE_VIBRATO == ON) {
@@ -206,6 +222,7 @@ void loop() {
 
     tone(SPEAKERPIN, freq + vibFreq, BURST_DURATION);
     delay(LOOPDELAY);
+
     return;
   }
 
@@ -252,7 +269,7 @@ int getVibrato() {
   static int sine_vibrato_sign = 1;
 
   //hardware knob is wired backwards so changing in software so that turning knob CW increases rate as expected
-  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 5);  //effectively control speed of vibrato
+  int vibratorate = map(analogRead(VIBRATORATEPIN), 0, 1023, 120, 0);  //effectively control speed of vibrato
   //depth affects pitch change and how quickly you get to new pitch when on sine version
   int vibratodepth = map(analogRead(VIBRATODEPTHPIN), 0, 1023, 5, 150);
   int inc_deviation = vibratodepth / 5;
@@ -300,7 +317,7 @@ void compute_music(int &freq, int &duration) {
   END_ITERATION = map(analogRead(ITERATIONENDPIN), 0, 1023, 3, MAX_ITERATIONS);
   //start can begin at zero; also wired backwards
   START_ITERATION = map(analogRead(ITERATIONSTARTPIN), 0, 1023, 0, MAX_ITERATIONS);
-  if (START_ITERATION > END_ITERATION){
+  if (START_ITERATION > END_ITERATION) {
     END_ITERATION = START_ITERATION + 10;
   }
   totalIterations += 1;
@@ -473,7 +490,9 @@ float getIFSProbabilty() {
 
 void executeGlitch() {
   GLITCH_FLAG = ON;
+#if defined(DEBUG)
   Serial.println("glitch");
+#endif
   GLITCH_FLAG = OFF;
 }
 
@@ -504,8 +523,9 @@ void receiveTrigger() {
   }
 
   oldPulse = newPulse;
-
+#if defined(DEBUG)
   Serial.println(arpeggiatorDuration);
+#endif
 }
 
 /*
@@ -546,5 +566,3 @@ float getNormedFloat(int sensor) {
   //convert to -1 - 1
   return ((float)matrix / 1023) * 2.0 - 1.0;
 }
-
-
